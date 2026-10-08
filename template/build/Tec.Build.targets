@@ -9,22 +9,24 @@
     No csproj, declare a dependência pelo id do pacote, sem versão:
       <TecReference Include="TEC.Vault.InMemory" />
 
-    Modo local (padrão fora do CI): se o repositório vizinho existir em $(TecComponentsRoot)
-    (ex.: ..\TEC.Vault\TEC.Vault.InMemory\TEC.Vault.InMemory.csproj), vira ProjectReference e as mudanças nele são
-    vistas na hora, sem publicar pacote. Se não existir, vira PackageReference.
-    No CI (CI=true) ou com -p:TecUseLocalProjects=false: sempre PackageReference, o que o consumidor real recebe.
+    Padrão, na máquina e no CI: PackageReference do feed interno tec-interno, o mesmo que o consumidor real recebe.
+
+    Modo local, sob demanda (-p:TecUseLocalProjects=true; ignorado no CI): se o repositório vizinho existir em
+    $(TecComponentsRoot) (ex.: ..\TEC.Vault\TEC.Vault.InMemory\TEC.Vault.InMemory.csproj), vira ProjectReference e as
+    mudanças nele são vistas na hora, sem publicar pacote (ex.: alterar o TEC.Core e testar no TEC.Vault). Se não
+    existir, continua PackageReference.
 
     A versão de cada pacote TEC.* consumido é a publicada no feed, declarada como qualquer pacote no
     Directory.Packages.props do repositório (o Dependabot a atualiza; sem ela o restore falha com NU1010):
       <PackageVersion Include="TEC.Core" Version="0.0.1" />
 
     O lock file do modo local é packages.local.lock.json (fora do git). O packages.lock.json versionado é sempre o do
-    modo pacote; para regenerá-lo: dotnet restore <solução> -p:TecUseLocalProjects=false, com a opção force-evaluate
+    modo pacote; para regenerá-lo: dotnet restore <solução>, com a opção force-evaluate
   -->
 
   <PropertyGroup>
-    <TecUseLocalProjects Condition="'$(TecUseLocalProjects)' == '' and '$(CI)' != 'true'">true</TecUseLocalProjects>
-    <TecUseLocalProjects Condition="'$(TecUseLocalProjects)' == ''">false</TecUseLocalProjects>
+    <!-- Pacote por padrão; projeto vizinho só sob demanda e nunca no CI (o CI valida o que o consumidor recebe) -->
+    <TecUseLocalProjects Condition="'$(TecUseLocalProjects)' == '' or '$(CI)' == 'true'">false</TecUseLocalProjects>
     <!-- O TEC.Core é a base e não depende de outro componente: o lock dele é o mesmo nos dois modos -->
     <NuGetLockFilePath Condition="'$(TecUseLocalProjects)' == 'true' and '$(TecComponent)' != 'TEC.Core'">packages.local.lock.json</NuGetLockFilePath>
   </PropertyGroup>

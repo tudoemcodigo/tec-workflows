@@ -185,7 +185,7 @@ Arquivos que **devem ser idênticos** em todos os componentes. Nunca edite a có
 | Arquivo | Conteúdo |
 |---|---|
 | `build/Tec.Build.props` | Alvos `net8.0;net10.0`, Central Package Management, lock file, `NuGetAudit`, analisadores, `TreatWarningsAsErrors` nos pacotes, AOT, metadados NuGet, README/ícone no pacote, `InternalsVisibleTo` dos testes |
-| `build/Tec.Build.targets` | `<TecReference>`: ProjectReference local ou PackageReference no CI |
+| `build/Tec.Build.targets` | `<TecReference>`: PackageReference do `tec-interno` por padrão (máquina e CI); ProjectReference para o repositório vizinho só com `-p:TecUseLocalProjects=true` (ignorado no CI) |
 | `build/Polyfills/*.cs` | APIs modernas para o `net8.0` (ex.: `System.Threading.Lock`), compiladas como `internal` só nos pacotes: o código usa `Lock` sem `#if`. Satélite que enxerga internos do núcleo remove a cópia local (`<Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />`) |
 | `Directory.Build.targets` | Importa o `build/Tec.Build.targets` |
 | `.editorconfig` | Estilo aplicado no build |
@@ -220,21 +220,41 @@ O job **Convenções** do CI falha se um arquivo canônico divergir, se um cspro
 
 ```mermaid
 flowchart LR
-    CSPROJ["&lt;TecReference Include=&quot;TEC.Vault&quot; /&gt;"] --> Q{"CI=true ou<br/>TecUseLocalProjects=false?"}
-    Q -- não --> E{"..\TEC.Vault\TEC.Vault\<br/>TEC.Vault.csproj existe?"}
+    CSPROJ["&lt;TecReference Include=&quot;TEC.Vault&quot; /&gt;"] --> Q{"TecUseLocalProjects=true<br/>(fora do CI)?"}
+    Q -- "não (padrão)" --> PK["PackageReference do tec-interno<br/>na versão do Directory.Packages.props<br/><sub>o que o consumidor recebe</sub>"]
+    Q -- sim --> E{"..\TEC.Vault\TEC.Vault\<br/>TEC.Vault.csproj existe?"}
     E -- sim --> PR["ProjectReference<br/><sub>mudança vista na hora</sub>"]
     E -- não --> PK
-    Q -- sim --> PK["PackageReference na versão do<br/>Directory.Packages.props<br/><sub>o que o consumidor recebe</sub>"]
 ```
 
-- Clone os repositórios lado a lado em `D:\Projetos\Componentes\TEC.*`: tudo compila junto, sem publicar pacote.
-- A versão de cada TEC.* consumido é a publicada no feed, declarada no `Directory.Packages.props` do repositório
-  (`<PackageVersion Include="TEC.Core" Version="0.0.1" />`). Componentes evoluem em versões independentes: o TEC.Core
-  pode continuar em `0.0.1` enquanto o TEC.Vault vai para `0.0.2`.
-- No modo local o lock file é `packages.local.lock.json` (fora do git). O `packages.lock.json` versionado é sempre o do modo pacote:
+- **Padrão, na máquina e no CI:** `PackageReference` do feed interno `tec-interno`, na versão declarada no
+  `Directory.Packages.props` do repositório (`<PackageVersion Include="TEC.Core" Version="0.0.1" />`): exatamente o
+  que o consumidor recebe. Componentes evoluem em versões independentes: o TEC.Core pode continuar em `0.0.1` enquanto
+  o TEC.Vault vai para `0.0.2`.
+- Por isso, compilar um componente que depende de outro TEC.* exige **leitura do feed `tec-interno`** na máquina. O
+  GitHub Packages exige token mesmo para pacote público; configure a credencial uma vez (PAT classic com
+  `read:packages`; no Linux/macOS acrescente `--store-password-in-clear-text`):
 
   ```bash
-  dotnet restore TEC.Vault.slnx -p:TecUseLocalProjects=false --force-evaluate
+  dotnet nuget update source tec-interno -u <usuario-github> -p <PAT>
+  # ou, se a origem ainda não existir no NuGet.Config do usuário:
+  dotnet nuget add source https://nuget.pkg.github.com/tudoemcodigo/index.json -n tec-interno -u <usuario-github> -p <PAT>
+  ```
+
+- **Modo local, sob demanda:** com os repositórios clonados lado a lado em `D:\Projetos\Componentes\TEC.*`,
+  `-p:TecUseLocalProjects=true` troca o `TecReference` por `ProjectReference` para o projeto vizinho (ex.: alterar o
+  TEC.Core e testar no TEC.Vault sem publicar pacote). Sem o vizinho, continua `PackageReference`. No CI (`CI=true`)
+  a opção é ignorada: o CI sempre valida o pacote.
+
+  ```bash
+  dotnet build TEC.Vault.slnx -p:TecUseLocalProjects=true
+  ```
+
+- No modo local o lock file é `packages.local.lock.json` (fora do git). O `packages.lock.json` versionado é o do modo
+  pacote (o padrão) e é regenerado com:
+
+  ```bash
+  dotnet restore TEC.Vault.slnx --force-evaluate
   ```
 
 > [!WARNING]
@@ -269,7 +289,7 @@ flowchart LR
 
 Para cada componente, depois que as dependências dele estiverem no feed:
 
-1. `dotnet restore <solução> -p:TecUseLocalProjects=false --force-evaluate` e commit do `packages.lock.json`.
+1. `dotnet restore <solução> --force-evaluate` e commit do `packages.lock.json`.
 2. Push → PR → `ci-ok` verde → merge. O CI do push na `main` publica a prévia `0.0.1-preview.N` automaticamente.
 3. **Actions → Publicar versão → `0.0.1`** (ou `0.0.1-rc.1`).
 4. *Package settings* → visibilidade **pública** e acesso dos repositórios da organização.
