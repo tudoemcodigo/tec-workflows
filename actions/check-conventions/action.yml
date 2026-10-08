@@ -1,0 +1,51 @@
+name: Convenções (TEC)
+description: >
+  Confere se os arquivos canônicos do componente (build compartilhado, .editorconfig, nuget.config, dependabot, ...)
+  são idênticos aos de template/ desta mesma versão do tec-workflows, e se os pacotes seguem as convenções mínimas.
+
+runs:
+  using: composite
+  steps:
+    - name: Arquivos canônicos
+      shell: bash
+      env:
+        TEMPLATE: ${{ github.action_path }}/../../template
+      run: |
+        set -euo pipefail
+        rc=0
+        while IFS= read -r -d '' file; do
+          rel="${file#./}"
+          if [ ! -f "$rel" ]; then
+            echo "::error file=$rel::Arquivo canônico ausente (rode scripts/sync-template.sh do tec-workflows)."
+            rc=1
+          elif ! cmp -s "$TEMPLATE/$rel" "$rel"; then
+            echo "::error file=$rel::Diverge do template do tec-workflows (edite lá e rode scripts/sync-template.sh)."
+            rc=1
+          fi
+        done < <(cd "$TEMPLATE" && find . -type f -print0)
+        if [ "$rc" -eq 0 ]; then
+          echo "### ✅ Arquivos canônicos idênticos ao template" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit "$rc"
+
+    - name: Convenções dos projetos
+      shell: bash
+      run: |
+        set -euo pipefail
+        rc=0
+        # Versões só no Directory.Packages.props (Central Package Management) e componentes TEC.* só por <TecReference>
+        while IFS= read -r -d '' proj; do
+          if grep -Eq '<PackageReference[^>]+Version=' "$proj"; then
+            echo "::error file=$proj::PackageReference com Version: declare a versão no Directory.Packages.props."
+            rc=1
+          fi
+          if grep -Eq '<PackageReference[^>]+Include="TEC\.' "$proj"; then
+            echo "::error file=$proj::Componente TEC.* via PackageReference: use <TecReference Include=\"TEC.X\" />."
+            rc=1
+          fi
+          if grep -Eq '<Version>' "$proj"; then
+            echo "::error file=$proj::<Version> no csproj: a versão é única por repositório (Directory.Build.props)."
+            rc=1
+          fi
+        done < <(find . -name '*.csproj' -not -path './.git/*' -print0)
+        exit "$rc"

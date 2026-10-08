@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # Workflows (.github/workflows) e composite actions (actions/*): actions fixadas por SHA, atualizadas num PR só
+  - package-ecosystem: github-actions
+    directories: ["/", "/actions/*"]
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]

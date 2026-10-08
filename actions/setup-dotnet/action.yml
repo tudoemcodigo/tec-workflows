@@ -1,0 +1,86 @@
+name: Setup .NET (TEC)
+description: >
+  SDK do global.json + runtimes extras, cache do NuGet pelos packages.lock.json, credencial do feed interno
+  (opcional), variáveis de ambiente extras e restore --locked-mode.
+
+inputs:
+  runtimes:
+    description: "Runtimes extras além do SDK do global.json (ex.: 8.0.x para rodar o alvo net8.0)"
+    default: "8.0.x"
+  private-feed:
+    description: "true: configura a origem tec-interno (GitHub Packages da organização); o job precisa de packages: read"
+    default: "false"
+  nuget-token:
+    description: "Token de leitura do feed interno (normalmente github.token); obrigatório com private-feed: true"
+    default: ""
+  env:
+    description: "Variáveis extras, uma por linha no formato NOME=valor (ex.: TEC_TESTES_INTEGRACAO=0)"
+    default: ""
+  restore:
+    description: "Projetos/soluções para restaurar com --locked-mode, separados por espaço ou linha (vazio: não restaura)"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        global-json-file: global.json   # SDK fixado no global.json (mesmo do desenvolvimento local)
+        dotnet-version: ${{ inputs.runtimes }}
+        cache: true
+        cache-dependency-path: '**/packages.lock.json'
+
+    # O nuget.config de cada repositório (template canônico) já define as origens nuget.org e tec-interno e o
+    # packageSourceMapping. Aqui entra só a credencial do tec-interno, no NuGet.Config do usuário do runner (fora do
+    # checkout), pela origem de mesmo nome.
+    - name: Credencial do feed interno
+      if: inputs.private-feed == 'true'
+      shell: bash
+      env:
+        NUGET_TOKEN: ${{ inputs.nuget-token }}
+        NUGET_FEED: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+      run: |
+        set -euo pipefail
+        if [ -z "$NUGET_TOKEN" ]; then
+          echo "::error::private-feed: true exige nuget-token (ex.: github.token, com packages: read no job)."
+          exit 1
+        fi
+        CONFIG="$HOME/.nuget/NuGet/NuGet.Config"
+        mkdir -p "$(dirname "$CONFIG")"
+        if [ ! -f "$CONFIG" ]; then
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<configuration />\n' > "$CONFIG"
+        fi
+        dotnet nuget remove source tec-interno --configfile "$CONFIG" >/dev/null 2>&1 || true
+        dotnet nuget add source "$NUGET_FEED" --name tec-interno \
+          --username "$GITHUB_ACTOR" --password "$NUGET_TOKEN" \
+          --store-password-in-clear-text --configfile "$CONFIG"
+
+    # Cada linha é validada antes de ir para o GITHUB_ENV: nome em maiúsculas e valor sem quebra de linha.
+    # O conteúdo vem do YAML do workflow chamador (texto fixo revisado em PR), nunca de dados do evento.
+    - name: Variáveis de ambiente
+      if: inputs.env != ''
+      shell: bash
+      env:
+        EXTRA_ENV: ${{ inputs.env }}
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        while IFS= read -r line; do
+          [ -z "${line//[[:space:]]/}" ] && continue
+          if ! [[ "$line" =~ ^[A-Z_][A-Z0-9_]*=.*$ ]]; then
+            echo "::error::Variável inválida em 'env' (use NOME=valor): $line"
+            exit 1
+          fi
+          echo "$line" >> "$GITHUB_ENV"
+        done <<< "$EXTRA_ENV"
+
+    - name: Restore (lock file obrigatório)
+      if: inputs.restore != ''
+      shell: bash
+      env:
+        TARGETS: ${{ inputs.restore }}
+      run: |
+        set -euo pipefail
+        for target in $TARGETS; do
+          dotnet restore "$target" --locked-mode
+        done

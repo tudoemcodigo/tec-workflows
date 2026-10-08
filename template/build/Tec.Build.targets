@@ -1,0 +1,46 @@
+<Project>
+
+  <!--
+    ARQUIVO CANÔNICO: mantido em tudoemcodigo/tec-workflows (template/build). Não edite no componente:
+    altere no tec-workflows e rode scripts/sync-template.sh. O CI (job "Convenções") falha se a cópia divergir.
+
+    Dependências entre componentes TEC.* (importado pelo Directory.Build.targets, depois do corpo do csproj).
+
+    No csproj, declare a dependência pelo id do pacote, sem versão:
+      <TecReference Include="TEC.Vault.InMemory" />
+
+    Modo local (padrão fora do CI): se o repositório vizinho existir em $(TecComponentsRoot)
+    (ex.: ..\TEC.Vault\TEC.Vault.InMemory\TEC.Vault.InMemory.csproj), vira ProjectReference e as mudanças nele são
+    vistas na hora, sem publicar pacote. Se não existir, vira PackageReference $(TecPackageVersion).
+    No CI (CI=true) ou com -p:TecUseLocalProjects=false: sempre PackageReference, o que o consumidor real recebe.
+
+    O lock file do modo local é packages.local.lock.json (fora do git). O packages.lock.json versionado é sempre o do
+    modo pacote; para regenerá-lo: dotnet restore <solução> -p:TecUseLocalProjects=false, com a opção force-evaluate
+  -->
+
+  <PropertyGroup>
+    <TecUseLocalProjects Condition="'$(TecUseLocalProjects)' == '' and '$(CI)' != 'true'">true</TecUseLocalProjects>
+    <TecUseLocalProjects Condition="'$(TecUseLocalProjects)' == ''">false</TecUseLocalProjects>
+    <!-- O TEC.Core é a base e não depende de outro componente: o lock dele é o mesmo nos dois modos -->
+    <NuGetLockFilePath Condition="'$(TecUseLocalProjects)' == 'true' and '$(TecComponent)' != 'TEC.Core'">packages.local.lock.json</NuGetLockFilePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- TEC.Vault.AzureKeyVault -> componente TEC.Vault -> ..\TEC.Vault\TEC.Vault.AzureKeyVault\TEC.Vault.AzureKeyVault.csproj -->
+    <TecReference Update="@(TecReference)" TecComponent="$([System.Text.RegularExpressions.Regex]::Match('%(Identity)', '^TEC\.[^.]+'))" />
+    <TecReference Update="@(TecReference)" TecProjectPath="$(TecComponentsRoot)%(TecComponent)/%(Identity)/%(Identity).csproj" />
+    <TecReference Update="@(TecReference)" TecLocal="False" />
+    <TecReference Update="@(TecReference)" TecLocal="$([System.IO.File]::Exists('%(TecProjectPath)'))" Condition="'$(TecUseLocalProjects)' == 'true'" />
+
+    <ProjectReference Include="@(TecReference->WithMetadataValue('TecLocal', 'True')->'%(TecProjectPath)')" />
+    <PackageReference Include="@(TecReference->WithMetadataValue('TecLocal', 'False'))" />
+    <PackageVersion Include="@(TecReference->WithMetadataValue('TecLocal', 'False'))" Version="$(TecPackageVersion)" />
+  </ItemGroup>
+
+  <!-- Dependência de componente só pela convenção: evita PackageReference TEC.* "solto", que ignora o modo local -->
+  <Target Name="TecValidateReferences" BeforeTargets="CollectPackageReferences">
+    <Error Condition="'%(PackageReference.Identity)' != '' and $([System.String]::Copy('%(PackageReference.Identity)').StartsWith('TEC.')) and '%(PackageReference.TecComponent)' == ''"
+           Text="Use &lt;TecReference Include=&quot;%(PackageReference.Identity)&quot; /&gt; em vez de PackageReference para componentes TEC.* (ver build/Tec.Build.targets)." />
+  </Target>
+
+</Project>

@@ -1,0 +1,272 @@
+name: Testes (.NET)
+
+# Um job de testes genérico, usado pelo dotnet-ci.yml e pelo dotnet-release.yml (unitários em matriz e integração) e
+# pelo performance.yml de cada componente (carga rápida e suítes pesadas, só sob demanda).
+#
+#   checkout -> setup .NET -> [login Azure OIDC] -> [setup-script] -> build -> testes -> artefatos -> [teardown-script]
+#
+# Artefatos: trx-<artifact> (.trx), cobertura-<artifact> (cobertura.xml, se coverage) e relatorios-<artifact>
+# (pasta $TEC_CARGA_RELATORIOS dos testes de carga; os *.md dela vão para o resumo da execução).
+#
+# Permissões que o chamador concede: contents: read, packages: read e, com Azure, id-token: write.
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: "Nome exibido do job"
+        type: string
+        default: "Testes"
+      tests:
+        description: >
+          Uma execução por linha: '<projeto> [treenode-filter]'
+          (ex.: 'TEC.Vault.Tests /*/*/*/*[Category!=Integracao]'). Cada linha tem a sua pasta de resultados.
+        type: string
+        required: true
+      tfm:
+        type: string
+        default: net10.0
+      coverage:
+        type: boolean
+        default: false
+      invariant:
+        description: "Executa com DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 (servidor sem ICU)"
+        type: boolean
+        default: false
+      env:
+        description: "Variáveis extras, uma por linha: NOME=valor (texto do workflow chamador, nunca dados do evento)"
+        type: string
+        default: ""
+      private-feed:
+        type: boolean
+        default: false
+      setup-script:
+        description: "Script bash do repositório executado antes do build (ex.: .github/scripts/integration-setup.sh)"
+        type: string
+        default: ""
+      teardown-script:
+        description: "Script bash do repositório executado sempre no fim (ex.: remover containers e segredos temporários)"
+        type: string
+        default: ""
+      azure-client-id:
+        description: "Client ID para login OIDC no Azure (vazio: sem Azure). Só na main e fora de pull request."
+        type: string
+        default: ""
+      azure-tenant-id:
+        type: string
+        default: ""
+      azure-env:
+        description: "Variáveis aplicadas só depois do login no Azure, uma por linha: NOME=valor (ex.: URI do cofre de testes)"
+        type: string
+        default: ""
+      artifact:
+        description: "Sufixo único dos artefatos (ex.: net10.0, integracao, carga)"
+        type: string
+        required: true
+      timeout-minutes:
+        type: number
+        default: 20
+    secrets:
+      test-env:
+        description: "Variáveis secretas, uma por linha: NOME=valor (mascaradas no log)"
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  run:
+    name: ${{ inputs.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      packages: read   # feed interno (private-feed)
+      id-token: write  # login OIDC no Azure (só usado com azure-client-id)
+    env:
+      HAS_TEST_ENV: ${{ secrets.test-env != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Projetos únicos das linhas de "tests", validados (nome de projeto e filtro sem caracteres de shell)
+      - name: Planejar execuções
+        id: plan
+        shell: bash
+        env:
+          TESTS: ${{ inputs.tests }}
+        run: |
+          set -euo pipefail
+          set -f
+          projects=()
+          while IFS= read -r line; do
+            [ -z "${line//[[:space:]]/}" ] && continue
+            read -r project filter extra <<< "$line"
+            if [ -n "${extra:-}" ] || ! [[ "$project" =~ ^[A-Za-z0-9._/-]+$ ]] || ! [[ "${filter:-}" =~ ^[][A-Za-z0-9/*=!.,_\&\|\(\)-]*$ ]]; then
+              echo "::error::Linha inválida em 'tests' (use '<projeto> [filtro]'): $line"
+              exit 1
+            fi
+            projects+=("$project")
+          done <<< "$TESTS"
+          if [ "${#projects[@]}" -eq 0 ]; then
+            echo "::error::'tests' não tem nenhuma execução."
+            exit 1
+          fi
+          echo "projects=$(printf '%s\n' "${projects[@]}" | sort -u | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup .NET
+        uses: tudoemcodigo/tec-workflows/actions/setup-dotnet@v1
+        with:
+          runtimes: ${{ inputs.tfm == 'net8.0' && '8.0.x' || '' }}
+          private-feed: ${{ inputs.private-feed }}
+          nuget-token: ${{ github.token }}
+          env: ${{ inputs.env }}
+          restore: ${{ steps.plan.outputs.projects }}
+
+      - name: Variáveis secretas
+        if: env.HAS_TEST_ENV == 'true'
+        shell: bash
+        env:
+          SECRET_ENV: ${{ secrets.test-env }}
+        run: | # zizmor: ignore[github-env]
+          set -euo pipefail
+          while IFS= read -r line; do
+            [ -z "${line//[[:space:]]/}" ] && continue
+            if ! [[ "$line" =~ ^[A-Z_][A-Z0-9_]*=.*$ ]]; then
+              echo "::error::Linha inválida em 'test-env' (use NOME=valor)."
+              exit 1
+            fi
+            value="${line#*=}"
+            [ -n "$value" ] && echo "::add-mask::$value"
+            echo "$line" >> "$GITHUB_ENV"
+          done <<< "$SECRET_ENV"
+
+      # OIDC só na main e fora de pull request: a credencial federada do Azure aceita apenas refs/heads/main
+      - name: Login no Azure (OIDC)
+        id: azure
+        if: inputs.azure-client-id != '' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ inputs.azure-client-id }}
+          tenant-id: ${{ inputs.azure-tenant-id }}
+          allow-no-subscriptions: true
+
+      - name: Variáveis do Azure
+        if: steps.azure.outcome == 'success' && inputs.azure-env != ''
+        shell: bash
+        env:
+          AZURE_ENV: ${{ inputs.azure-env }}
+        run: | # zizmor: ignore[github-env]
+          set -euo pipefail
+          while IFS= read -r line; do
+            [ -z "${line//[[:space:]]/}" ] && continue
+            if ! [[ "$line" =~ ^[A-Z_][A-Z0-9_]*=.*$ ]]; then
+              echo "::error::Variável inválida em 'azure-env' (use NOME=valor): $line"
+              exit 1
+            fi
+            echo "$line" >> "$GITHUB_ENV"
+          done <<< "$AZURE_ENV"
+
+      - name: Preparar ambiente
+        if: inputs.setup-script != ''
+        shell: bash
+        env:
+          SCRIPT: ${{ inputs.setup-script }}
+          TEC_AZURE_LOGIN: ${{ steps.azure.outcome == 'success' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$SCRIPT" =~ ^\.github/scripts/[A-Za-z0-9._-]+\.sh$ ]] || [ ! -f "$SCRIPT" ]; then
+            echo "::error::setup-script deve ser um .sh existente em .github/scripts/: $SCRIPT"
+            exit 1
+          fi
+          bash "$SCRIPT"
+
+      - name: Build
+        shell: bash
+        env:
+          PROJECTS: ${{ steps.plan.outputs.projects }}
+          TFM: ${{ inputs.tfm }}
+        run: |
+          set -euo pipefail
+          # Sem o modo invariante: com ele o SDK não reconhece as culturas dos recursos de pacotes (NETSDK1188)
+          for project in $PROJECTS; do
+            dotnet build "$project" -c Release -f "$TFM" --no-restore
+          done
+
+      - name: Testes
+        shell: bash
+        env:
+          TESTS: ${{ inputs.tests }}
+          TFM: ${{ inputs.tfm }}
+          COVERAGE: ${{ inputs.coverage }}
+          TEC_AZURE_LOGIN: ${{ steps.azure.outcome == 'success' && '1' || '0' }}
+          TEC_CARGA_RELATORIOS: ${{ github.workspace }}/relatorios
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: ${{ inputs.invariant && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          set -f
+          rc=0
+          index=0
+          while IFS= read -r line; do
+            [ -z "${line//[[:space:]]/}" ] && continue
+            read -r project filter <<< "$line"
+            index=$((index + 1))
+            ARGS=(-c Release -f "$TFM" --no-build --results-directory "./resultados/$index" --report-trx)
+            if [ "$COVERAGE" = "true" ]; then ARGS+=(--coverage --coverage-output-format cobertura); fi
+            if [ -n "${filter:-}" ]; then ARGS+=(--treenode-filter "$filter"); fi
+            echo "::group::$project ${filter:-}"
+            dotnet test --project "$project" "${ARGS[@]}" || rc=1
+            echo "::endgroup::"
+          done <<< "$TESTS"
+          exit "$rc"
+
+      - name: Relatórios de carga no resumo
+        if: ${{ !cancelled() && hashFiles('relatorios/**/*.md') != '' }}
+        shell: bash
+        run: find relatorios -name '*.md' -print0 | sort -z | xargs -0 cat >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload .trx
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trx-${{ inputs.artifact }}
+          path: resultados/**/*.trx
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload cobertura
+        if: ${{ !cancelled() && inputs.coverage }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cobertura-${{ inputs.artifact }}
+          path: resultados/**/*.cobertura.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload relatórios de carga
+        if: ${{ !cancelled() && hashFiles('relatorios/**') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: relatorios-${{ inputs.artifact }}
+          path: relatorios/
+          retention-days: 30
+
+      - name: Limpar ambiente
+        if: ${{ always() && inputs.teardown-script != '' }}
+        shell: bash
+        env:
+          SCRIPT: ${{ inputs.teardown-script }}
+          TEC_AZURE_LOGIN: ${{ steps.azure.outcome == 'success' && '1' || '0' }}
+        run: |
+          set -uo pipefail
+          if ! [[ "$SCRIPT" =~ ^\.github/scripts/[A-Za-z0-9._-]+\.sh$ ]] || [ ! -f "$SCRIPT" ]; then
+            echo "::error::teardown-script deve ser um .sh existente em .github/scripts/: $SCRIPT"
+            exit 1
+          fi
+          bash "$SCRIPT"

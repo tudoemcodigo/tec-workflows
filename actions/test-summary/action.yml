@@ -1,0 +1,28 @@
+name: Resumo de testes (TEC)
+description: >
+  Consolida os .trx de uma pasta (de um ou vários jobs) e publica no resumo da execução a tabela de aprovados,
+  falhas e pulados (com o motivo). Nunca falha: quem quebra o pipeline são os jobs de teste.
+
+inputs:
+  path:
+    description: "Pasta com os .trx (procurados recursivamente)"
+    required: true
+  ignore:
+    description: "Padrões (fnmatch) de nomes de .trx fora do relatório, separados por espaço (ex.: 'TEC.Vault.LoadTests*')"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Resumo de testes
+      shell: bash
+      env:
+        TRX_DIR: ${{ inputs.path }}
+        IGNORE: ${{ inputs.ignore }}
+        SCRIPT: ${{ github.action_path }}/resumo-testes.py
+      run: |
+        set -euo pipefail
+        set -f   # os padrões vão literais para o script, sem expansão de glob pelo shell
+        ARGS=()
+        for pattern in $IGNORE; do ARGS+=(--ignorar "$pattern"); done
+        python3 "$SCRIPT" "$TRX_DIR" "$GITHUB_STEP_SUMMARY" "${ARGS[@]}"

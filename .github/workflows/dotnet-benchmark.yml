@@ -1,0 +1,89 @@
+name: Benchmarks (.NET)
+
+# BenchmarkDotNet comparando net8.0 x net10.0. Chamado pelo performance.yml de cada componente (só sob demanda).
+# Os relatórios em Markdown vão para o resumo da execução; os completos, para o artefato "benchmarks".
+# Medições em runner compartilhado variam entre execuções: use para comparar tendências, não números absolutos.
+#
+# Permissões que o chamador concede: contents: read, packages: read
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Projeto de benchmarks (ex.: TEC.Core.Benchmarks)"
+        type: string
+        required: true
+      filter:
+        description: "Filtro do BenchmarkDotNet (ex.: *Csv*; * = todos)"
+        type: string
+        default: "*"
+      private-feed:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  run:
+    name: Benchmarks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validar parâmetros
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+          FILTER: ${{ inputs.filter }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$PROJECT" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error::Projeto inválido: $PROJECT"
+            exit 1
+          fi
+          if ! [[ "$FILTER" =~ ^[A-Za-z0-9.*_-]{1,100}$ ]]; then
+            echo "::error::Filtro inválido: use letras, dígitos, '.', '*', '_' e '-'."
+            exit 1
+          fi
+
+      - name: Setup .NET
+        uses: tudoemcodigo/tec-workflows/actions/setup-dotnet@v1
+        with:
+          runtimes: "8.0.x"
+          private-feed: ${{ inputs.private-feed }}
+          nuget-token: ${{ github.token }}
+          restore: ${{ inputs.project }}
+
+      - name: Benchmarks
+        env:
+          PROJECT: ${{ inputs.project }}
+          FILTER: ${{ inputs.filter }}
+        run: >
+          dotnet run -c Release --no-restore --project "$PROJECT" -f net10.0 --
+          --filter "$FILTER" --runtimes net8.0 net10.0 --exporters github --artifacts ./benchmarks
+
+      - name: Resumo
+        if: ${{ !cancelled() && hashFiles('benchmarks/results/*-report-github.md') != '' }}
+        shell: bash
+        run: cat benchmarks/results/*-report-github.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload relatórios
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmarks
+          path: benchmarks/
+          if-no-files-found: ignore
+          retention-days: 30

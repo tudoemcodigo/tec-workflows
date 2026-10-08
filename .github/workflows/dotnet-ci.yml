@@ -1,0 +1,374 @@
+name: CI (.NET)
+
+# Validação de um componente lib-tec-* (pull request, merge queue, push na main, agendamento semanal e sob demanda).
+# Push na main: depois do ci-ok verde, publica a prévia <Version>-preview.N no GitHub Packages, com N sequencial por
+# versão (reinicia em 1 a cada nova <Version>).
+# Versões estáveis e rc: só pelo dotnet-release.yml. Pull request, agendamento e disparo manual nunca publicam.
+# Testes de carga e suítes pesadas não rodam aqui: só sob demanda, no performance.yml de cada repositório.
+#
+#   changes ──┬── conventions ───────────────────────────┐
+#             ├── build-pack ────────────────────────────┤
+#             ├── unit (net10.0 + cobertura) ─┐          │
+#             ├── unit (net8.0) ──────────────┤          │
+#             ├── unit (net10.0 sem ICU) ─────┼─ report ─┼── ci-ok ── publicar-previa (só push na main)
+#             ├── integration (containers) ───┘          │
+#             └── codeql ────────────────────────────────┘
+#
+# ci-ok é o único check obrigatório na proteção da main.
+#
+# Tudo roda em paralelo depois do "changes". PR que só altera documentação pula os jobs pesados e o ci-ok passa mesmo
+# assim (um paths-ignore no gatilho deixaria o check obrigatório pendente para sempre).
+#
+# Permissões que o workflow chamador concede ao job que usa este arquivo:
+#   contents: read, pull-requests: read, packages: write, actions: read, security-events: read, id-token: write
+#   (packages: write só é usado pelo publicar-previa, que roda apenas no push na main)
+on:
+  workflow_call:
+    inputs:
+      solution:
+        description: "Solução (.slnx): compilada inteira e empacotada (só projetos IsPackable) no build-pack"
+        type: string
+        required: true
+      unit-tests:
+        description: "Testes da matriz (net10.0, net8.0, sem ICU): uma linha por execução, '<projeto> [filtro]'"
+        type: string
+        required: true
+      integration-tests:
+        description: "Testes de integração (net10.0, com cobertura): '<projeto> [filtro]' por linha; vazio: sem job"
+        type: string
+        default: ""
+      integration-setup:
+        description: "Script em .github/scripts que sobe as dependências (containers, segredos temporários)"
+        type: string
+        default: ""
+      integration-teardown:
+        description: "Script em .github/scripts executado sempre no fim da integração"
+        type: string
+        default: ""
+      env:
+        description: "Variáveis extras para todos os jobs de teste, uma por linha: NOME=valor"
+        type: string
+        default: ""
+      private-feed:
+        description: "Restaura pacotes TEC.* do feed interno (GitHub Packages): componentes que dependem de outro TEC.*"
+        type: boolean
+        default: false
+      azure-client-id:
+        description: "OIDC do Azure para a integração (só na main, fora de PR); vazio: sem Azure"
+        type: string
+        default: ""
+      azure-tenant-id:
+        type: string
+        default: ""
+      azure-env:
+        description: "Variáveis da integração aplicadas só depois do login no Azure: NOME=valor por linha"
+        type: string
+        default: ""
+      codeql-build-mode:
+        type: string
+        default: none
+      codeql-queries:
+        type: string
+        default: security-extended
+      coverage-title:
+        description: "Título do relatório de cobertura (padrão: nome do repositório)"
+        type: string
+        default: ""
+      docs-pattern:
+        description: "Regex (grep -E) de arquivos que não exigem build; PR só com esses arquivos pula os jobs pesados"
+        type: string
+        # O README.md da raiz e os README.md das pastas dos pacotes vão dentro dos pacotes: não entram
+        default: '^(docs/|LICENSE$|CHANGELOG\.md$|samples/.+\.md$|\.github/.+\.md$)'
+    secrets:
+      test-env:
+        description: "Variáveis secretas da integração, uma por linha: NOME=valor"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Mudanças
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read   # lista de arquivos do PR
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - name: Arquivos alterados
+        id: diff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          PATTERN: ${{ inputs.docs-pattern }}
+        run: |
+          set -euo pipefail
+          # Fora de pull request (merge queue, agendamento, manual): valida tudo
+          if [ -z "${PR:-}" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          FILES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename')
+          CODE=$(grep -Ev -- "$PATTERN" <<< "$FILES" || true)
+          if [ -n "$CODE" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "### 📝 Só documentação alterada: build, testes e CodeQL pulados" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  conventions:
+    name: Convenções
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Convenções
+        uses: tudoemcodigo/tec-workflows/actions/check-conventions@v1
+
+  build-pack:
+    name: Build e pacote
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      version: ${{ steps.versao.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Histórico completo só no push na main: a sequência da prévia conta commits (veja o passo "Versão")
+          fetch-depth: ${{ github.event_name != 'push' && 1 || 0 }}
+
+      - name: Setup .NET
+        uses: tudoemcodigo/tec-workflows/actions/setup-dotnet@v1
+        with:
+          runtimes: ""
+          private-feed: ${{ inputs.private-feed }}
+          nuget-token: ${{ github.token }}
+          restore: ${{ inputs.solution }}
+
+      # Push na main: <Version do Directory.Build.props>-preview.N, com N sequencial por versão: o commit que definiu a
+      # <Version> atual é o 1, e cada commit seguinte da main (--first-parent: um por merge de PR) soma 1. A sequência
+      # reinicia a cada nova <Version>, não depende do feed nem colide entre execuções simultâneas, e uma reexecução
+      # gera o mesmo número (o push usa --skip-duplicate). Fora do push na main: a própria <Version>, sem publicar.
+      - name: Versão
+        id: versao
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          set -euo pipefail
+          BASE=$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)
+          if ! [[ "$BASE" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::<Version> do Directory.Build.props ausente ou fora do padrão X.Y.Z (atual: '$BASE')."
+            exit 1
+          fi
+          VERSION="$BASE"
+          if [ "$PREVIEW" = "true" ]; then
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$BASE" >/dev/null 2>&1; then
+              echo "::error::A versão $BASE já foi publicada (tag v$BASE). Suba a <Version> do Directory.Build.props."
+              exit 1
+            fi
+            SINCE=$(git log --first-parent -1 --format=%H -G'<Version>' -- Directory.Build.props)
+            if [ -z "$SINCE" ]; then
+              echo "::error::Nenhum commit da main definiu a <Version> do Directory.Build.props."
+              exit 1
+            fi
+            SEQUENCE=$(( $(git rev-list --count --first-parent "$SINCE..HEAD") + 1 ))
+            VERSION="$BASE-preview.$SEQUENCE"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "### 📦 Versão: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Solução inteira (analisadores como erro nos pacotes): benchmarks e samples continuam compilando
+      - name: Build
+        env:
+          SOLUTION: ${{ inputs.solution }}
+          VERSION: ${{ steps.versao.outputs.version }}
+        run: dotnet build "$SOLUTION" -c Release --no-restore "-p:Version=$VERSION"
+
+      # Package validation entre os TFMs; só os projetos IsPackable geram pacote (publicado só pelo publicar-previa)
+      - name: Pack
+        env:
+          SOLUTION: ${{ inputs.solution }}
+          VERSION: ${{ steps.versao.outputs.version }}
+        run: dotnet pack "$SOLUTION" -c Release --no-build "-p:Version=$VERSION" -o ./artifacts
+
+      - name: Upload pacotes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nuget
+          path: artifacts/*
+          retention-days: 7
+
+      # Vulnerabilidade já quebra o restore (NuGetAudit). Aqui entram no resumo os pacotes descontinuados (aviso, não
+      # bloqueia): no agendamento semanal isso pega pacotes que foram descontinuados depois do último merge.
+      - name: Pacotes descontinuados
+        env:
+          SOLUTION: ${{ inputs.solution }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=$(dotnet list "$SOLUTION" package --deprecated --include-transitive)
+          if grep -q 'tem os seguintes pacotes preteridos\|has the following deprecated packages' <<< "$OUT"; then
+            echo "::warning::Há pacotes descontinuados (ver resumo da execução)."
+            { echo "### ⚠️ Pacotes descontinuados"; echo '```'; echo "$OUT"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  unit:
+    name: Unitários
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: net10.0
+            tfm: net10.0
+            coverage: true
+            invariant: false
+          - name: net8.0
+            tfm: net8.0
+            coverage: false
+            invariant: false
+          - name: net10.0-sem-icu
+            tfm: net10.0
+            coverage: false
+            invariant: true
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v1
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    with:
+      name: ${{ matrix.name }}
+      tests: ${{ inputs.unit-tests }}
+      tfm: ${{ matrix.tfm }}
+      coverage: ${{ matrix.coverage }}
+      invariant: ${{ matrix.invariant }}
+      env: ${{ inputs.env }}
+      private-feed: ${{ inputs.private-feed }}
+      artifact: unit-${{ matrix.name }}
+
+  integration:
+    name: Integração
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && inputs.integration-tests != ''
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v1
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    with:
+      name: integração
+      tests: ${{ inputs.integration-tests }}
+      coverage: true
+      env: ${{ inputs.env }}
+      private-feed: ${{ inputs.private-feed }}
+      setup-script: ${{ inputs.integration-setup }}
+      teardown-script: ${{ inputs.integration-teardown }}
+      azure-client-id: ${{ inputs.azure-client-id }}
+      azure-tenant-id: ${{ inputs.azure-tenant-id }}
+      azure-env: ${{ inputs.azure-env }}
+      artifact: integracao
+      timeout-minutes: 30
+    secrets:
+      test-env: ${{ secrets.test-env }}
+
+  # Um resumo com todos os .trx e uma cobertura somada (unitários net10.0 + integração)
+  report:
+    name: Relatório
+    needs: [changes, unit, integration]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Relatório
+        uses: tudoemcodigo/tec-workflows/actions/test-report@v1
+        with:
+          coverage-title: ${{ inputs.coverage-title || github.event.repository.name }}
+
+  codeql:
+    name: CodeQL
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    uses: tudoemcodigo/tec-workflows/.github/workflows/codeql-dotnet.yml@v1
+    permissions:
+      contents: read
+      actions: read
+      security-events: read
+      packages: read
+    with:
+      solution: ${{ inputs.solution }}
+      build-mode: ${{ inputs.codeql-build-mode }}
+      queries: ${{ inputs.codeql-queries }}
+      private-feed: ${{ inputs.private-feed }}
+
+  # Único check obrigatório na proteção da main: falha se qualquer job falhou ou foi cancelado; jobs pulados
+  # (PR só de documentação, componente sem integração) contam como sucesso
+  ci-ok:
+    name: ci-ok
+    needs: [changes, conventions, build-pack, unit, integration, report, codeql]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Conferir jobs
+        shell: bash
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Resultados: $RESULTS"
+          if [[ " $RESULTS " == *" failure "* || " $RESULTS " == *" cancelled "* ]]; then
+            echo "::error::Algum job do CI falhou ou foi cancelado."
+            exit 1
+          fi
+
+  publicar-previa:
+    name: Publicar prévia
+    needs: [build-pack, ci-ok]
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.ci-ok.result == 'success' && needs.build-pack.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write   # push no feed NuGet do GitHub
+    steps:
+      - name: Download pacotes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nuget
+          path: artifacts
+
+      # O GitHub Packages não aceita .snupkg; "Re-run" da mesma execução reaproveita o número (--skip-duplicate)
+      - name: Push no GitHub Packages
+        env:
+          NUGET_API_KEY: ${{ github.token }}
+          NUGET_FEED: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --source "$NUGET_FEED"
+          --api-key "$NUGET_API_KEY"
+          --skip-duplicate
+          --no-symbols
+
+      - name: Resumo
+        env:
+          VERSION: ${{ needs.build-pack.outputs.version }}
+        run: echo "### ✅ Prévia \`$VERSION\` publicada no GitHub Packages" >> "$GITHUB_STEP_SUMMARY"
