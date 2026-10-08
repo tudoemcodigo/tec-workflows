@@ -145,6 +145,7 @@ jobs:
       packages: read
     outputs:
       version: ${{ steps.versao.outputs.version }}
+      publish: ${{ steps.versao.outputs.publish }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -164,7 +165,8 @@ jobs:
       # Push na main: <Version do Directory.Build.props>-preview.N, com N sequencial por versão: o commit que definiu a
       # <Version> atual é o 1, e cada commit seguinte da main (--first-parent: um por merge de PR) soma 1. A sequência
       # reinicia a cada nova <Version>, não depende do feed nem colide entre execuções simultâneas, e uma reexecução
-      # gera o mesmo número (o push usa --skip-duplicate). Fora do push na main: a própria <Version>, sem publicar.
+      # gera o mesmo número (o push usa --skip-duplicate). Fora do push na main, ou com a <Version> já lançada (tag
+      # v<Version>): a própria <Version>, sem publicar.
       - name: Versão
         id: versao
         shell: bash
@@ -179,11 +181,13 @@ jobs:
             exit 1
           fi
           VERSION="$BASE"
+          PUBLISH=false
+          if [ "$PREVIEW" = "true" ] && gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$BASE" >/dev/null 2>&1; then
+            # Versão já lançada e mantida de propósito (ex.: só ajustes de build ou documentação): valida tudo, sem prévia
+            echo "::notice::A versão $BASE já foi publicada (tag v$BASE): nenhuma prévia gerada. Para publicar novas prévias, suba a <Version> do Directory.Build.props."
+            PREVIEW=false
+          fi
           if [ "$PREVIEW" = "true" ]; then
-            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$BASE" >/dev/null 2>&1; then
-              echo "::error::A versão $BASE já foi publicada (tag v$BASE). Suba a <Version> do Directory.Build.props."
-              exit 1
-            fi
             SINCE=$(git log --first-parent -1 --format=%H -G'<Version>' -- Directory.Build.props)
             if [ -z "$SINCE" ]; then
               echo "::error::Nenhum commit da main definiu a <Version> do Directory.Build.props."
@@ -191,8 +195,10 @@ jobs:
             fi
             SEQUENCE=$(( $(git rev-list --count --first-parent "$SINCE..HEAD") + 1 ))
             VERSION="$BASE-preview.$SEQUENCE"
+            PUBLISH=true
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
           echo "### 📦 Versão: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
 
       # Solução inteira (analisadores como erro nos pacotes): benchmarks e samples continuam compilando
@@ -344,7 +350,8 @@ jobs:
     needs: [build-pack, ci-ok]
     if: >-
       ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      needs.ci-ok.result == 'success' && needs.build-pack.result == 'success' }}
+      needs.ci-ok.result == 'success' && needs.build-pack.result == 'success' &&
+      needs.build-pack.outputs.publish == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

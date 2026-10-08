@@ -77,7 +77,9 @@ flowchart LR
 
 Fluxo de versões: PR → merge na `main` → prévia automática (ex.: `0.0.1-preview.3`, com a `<Version>` do
 `Directory.Build.props` e N sequencial por versão); versão estável ou `-rc.N` → **Actions → Publicar versão**. Depois de
-publicar `X.Y.Z`, suba a `<Version>` para a próxima: se a tag `v<Version>` já existe, o CI falha pedindo esse ajuste.
+publicar `X.Y.Z`, suba a `<Version>` para a próxima quando quiser novas prévias: enquanto a tag `v<Version>` existir, o
+CI do push na `main` valida tudo normalmente, mas não gera prévia (avisa com um `::notice::` e pula o `publicar-previa`).
+Assim um componente pode ficar numa versão publicada (ex.: TEC.Core em `0.0.1`) e ainda receber correções na `main`.
 
 > [!NOTE]
 > **Número da prévia:** o commit da `main` que definiu a `<Version>` atual gera o `preview.1` e cada commit seguinte da
@@ -222,10 +224,13 @@ flowchart LR
     Q -- não --> E{"..\TEC.Vault\TEC.Vault\<br/>TEC.Vault.csproj existe?"}
     E -- sim --> PR["ProjectReference<br/><sub>mudança vista na hora</sub>"]
     E -- não --> PK
-    Q -- sim --> PK["PackageReference 0.0.1<br/><sub>o que o consumidor recebe</sub>"]
+    Q -- sim --> PK["PackageReference na versão do<br/>Directory.Packages.props<br/><sub>o que o consumidor recebe</sub>"]
 ```
 
 - Clone os repositórios lado a lado em `D:\Projetos\Componentes\TEC.*`: tudo compila junto, sem publicar pacote.
+- A versão de cada TEC.* consumido é a publicada no feed, declarada no `Directory.Packages.props` do repositório
+  (`<PackageVersion Include="TEC.Core" Version="0.0.1" />`). Componentes evoluem em versões independentes: o TEC.Core
+  pode continuar em `0.0.1` enquanto o TEC.Vault vai para `0.0.2`.
 - No modo local o lock file é `packages.local.lock.json` (fora do git). O `packages.lock.json` versionado é sempre o do modo pacote:
 
   ```bash
@@ -268,8 +273,8 @@ Para cada componente, depois que as dependências dele estiverem no feed:
 2. Push → PR → `ci-ok` verde → merge. O CI do push na `main` publica a prévia `0.0.1-preview.N` automaticamente.
 3. **Actions → Publicar versão → `0.0.1`** (ou `0.0.1-rc.1`).
 4. *Package settings* → visibilidade **pública** e acesso dos repositórios da organização.
-5. Suba a `<Version>` do `Directory.Build.props` para a próxima (ex.: `0.0.2`): com a tag `v0.0.1` existente, o CI
-   falha até esse ajuste.
+5. Para gerar novas prévias, suba a `<Version>` do `Directory.Build.props` para a próxima (ex.: `0.0.2`): com a tag
+   `v0.0.1` existente, o CI da `main` continua validando tudo, mas não publica prévia até esse ajuste.
 
 ---
 

@@ -83,7 +83,7 @@ TEC.X/
 | Versão | Uma só por repositório, em `Directory.Build.props` (`0.0.1` até a primeira publicação). Nunca `<Version>` no csproj |
 | Alvos | `net8.0;net10.0` (LTS). Gerador Roslyn: `netstandard2.0` |
 | Pacotes de terceiros | Versão só no `Directory.Packages.props`; `CentralPackageTransitivePinningEnabled` ligado |
-| Componentes TEC.* | `<TecReference Include="TEC.Vault" />` — vira ProjectReference no desenvolvimento local e PackageReference no CI |
+| Componentes TEC.* | `<TecReference Include="TEC.Vault" />` no csproj, sem versão — vira ProjectReference no desenvolvimento local e PackageReference no CI. A versão consumida é a **publicada**, declarada no `Directory.Packages.props` (`<PackageVersion Include="TEC.Vault" Version="0.0.1" />`), atualizada pelo Dependabot |
 | Lock file | `packages.lock.json` versionado (modo pacote); restore `--locked-mode` no CI |
 | Avisos | Em pacotes, **todo aviso é erro** (CA, IDE, IL de AOT/trimming, nullable, CS1591) |
 | AOT | `IsAotCompatible=true` por padrão. Desligar só no csproj, com comentário justificando (ex.: EF Core) |
@@ -190,4 +190,4 @@ Quando o título do arquivo coincide com uma seção fixa (ex.: `seguranca.md` �
 
 ## ⚙️ CI/CD
 
-Ver [README do tec-workflows](../README.md). Resumo: PR → `ci-ok` (convenções, build+pack, unitários em matriz, integração e CodeQL **em paralelo**); push na `main` → o mesmo CI e, com `ci-ok` verde, a prévia `<Version>-preview.N` no feed; `release.yml` manual (`X.Y.Z` ou `X.Y.Z-rc.N`), com convenções, pack, unitários + cobertura e CodeQL antes de criar a tag e publicar; depois de publicar `X.Y.Z`, suba a `<Version>`. Testes de carga (`Carga-CI`, `Carga-Pesada`, `Seguranca-Pesada`) só no `performance.yml`, manual: tempo de parede em runner compartilhado é ruidoso e não pode bloquear PR nem versão.
+Ver [README do tec-workflows](../README.md). Resumo: PR → `ci-ok` (convenções, build+pack, unitários em matriz, integração e CodeQL **em paralelo**); push na `main` → o mesmo CI e, com `ci-ok` verde, a prévia `<Version>-preview.N` no feed; `release.yml` manual (`X.Y.Z` ou `X.Y.Z-rc.N`), com convenções, pack, unitários + cobertura e CodeQL antes de criar a tag e publicar; depois de publicar `X.Y.Z`, suba a `<Version>` para voltar a gerar prévias (enquanto a tag `v<Version>` existir, o CI da `main` valida tudo, mas não publica prévia: emite um `::notice::` e pula o `publicar-previa`). Testes de carga (`Carga-CI`, `Carga-Pesada`, `Seguranca-Pesada`) só no `performance.yml`, manual: tempo de parede em runner compartilhado é ruidoso e não pode bloquear PR nem versão.

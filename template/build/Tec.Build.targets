@@ -11,8 +11,12 @@
 
     Modo local (padrão fora do CI): se o repositório vizinho existir em $(TecComponentsRoot)
     (ex.: ..\TEC.Vault\TEC.Vault.InMemory\TEC.Vault.InMemory.csproj), vira ProjectReference e as mudanças nele são
-    vistas na hora, sem publicar pacote. Se não existir, vira PackageReference $(TecPackageVersion).
+    vistas na hora, sem publicar pacote. Se não existir, vira PackageReference.
     No CI (CI=true) ou com -p:TecUseLocalProjects=false: sempre PackageReference, o que o consumidor real recebe.
+
+    A versão de cada pacote TEC.* consumido é a publicada no feed, declarada como qualquer pacote no
+    Directory.Packages.props do repositório (o Dependabot a atualiza; sem ela o restore falha com NU1010):
+      <PackageVersion Include="TEC.Core" Version="0.0.1" />
 
     O lock file do modo local é packages.local.lock.json (fora do git). O packages.lock.json versionado é sempre o do
     modo pacote; para regenerá-lo: dotnet restore <solução> -p:TecUseLocalProjects=false, com a opção force-evaluate
@@ -34,7 +38,6 @@
 
     <ProjectReference Include="@(TecReference->WithMetadataValue('TecLocal', 'True')->'%(TecProjectPath)')" />
     <PackageReference Include="@(TecReference->WithMetadataValue('TecLocal', 'False'))" />
-    <PackageVersion Include="@(TecReference->WithMetadataValue('TecLocal', 'False'))" Version="$(TecPackageVersion)" />
   </ItemGroup>
 
   <!-- Dependência de componente só pela convenção: evita PackageReference TEC.* "solto", que ignora o modo local -->
