@@ -191,7 +191,7 @@ Arquivos que **devem ser idênticos** em todos os componentes. Nunca edite a có
 | `.editorconfig` | Estilo aplicado no build |
 | `nuget.config` | Origens `nuget.org` + `tec-interno` e `packageSourceMapping` (TEC.* só do feed interno) |
 | `.gitignore` · `.gitattributes` · `global.json` · `LICENSE` · `Images/Logo.png` | Iguais em todos |
-| `.github/dependabot.yml` · `.github/zizmor.yml` | Atualizações semanais agrupadas com cooldown; auditoria dos workflows |
+| `.github/dependabot.yml` · `.github/zizmor.yml` | Atualizações semanais agrupadas com cooldown, exceto ASP.NET Core, EF Core e Roslyn ([dependências pareadas](docs/padroes.md#dependências-pareadas-atualizadas-à-mão), à mão); auditoria dos workflows |
 
 ```bash
 # Na pasta D:\Projetos\Componentes (Git Bash)

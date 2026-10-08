@@ -90,6 +90,20 @@ TEC.X/
 | Metadados | Só `Description` e `PackageTags` no csproj; o resto vem de `build/Tec.Build.props` |
 | README do pacote | `README.md` na pasta do projeto (repositório com vários pacotes) ou o da raiz |
 
+### Dependências pareadas (atualizadas à mão)
+
+O Dependabot ignora três famílias de pacotes (`.github/dependabot.yml`), porque não entende `Condition` no
+`Directory.Packages.props`: propõe a major errada e regenera o lock de um TFM só (`NU1004` no restore).
+
+| Pacotes | Por quê | Regra |
+|---|---|---|
+| `Microsoft.AspNetCore.*`, `Microsoft.EntityFrameworkCore*` | Uma versão por TFM: **8.x no `net8.0`, 10.x no `net10.0`** (LTS com LTS) | Patch mensal: suba as duas linhas (ex.: `8.0.31` → `8.0.32` e `10.0.12` → `10.0.13`). Major só junto com um TFM novo |
+| `Microsoft.CodeAnalysis.*` | O gerador de código usa a versão do **SDK mínimo suportado** (ex.: Roslyn 4.12); os demais projetos podem usar outra | Sobe só quando o SDK mínimo subir |
+
+Para atualizar: troque a versão no `Directory.Packages.props`, rode `dotnet restore <solução> --force-evaluate` (regenera
+o lock dos dois TFMs) e abra o PR. Vulnerabilidade conhecida nesses pacotes continua quebrando o restore (`NuGetAudit`),
+então nenhuma correção de segurança passa despercebida.
+
 ## 💻 Código
 
 | Tema | Regra |
@@ -144,6 +158,8 @@ Framework: **TUnit** (Microsoft.Testing.Platform). Nome dos testes descreve o co
 | Parâmetros de carga | Prefixo `TEC_CARGA_` (específicos como `TEC_CARGA_SOAK_SEGUNDOS`; `TEC_CARGA_FATOR` quando a suíte usa um fator único de duração) |
 | Relatórios de carga | Pasta em `TEC_CARGA_RELATORIOS` (o CI define); cada suíte grava `*.md` ali — o CI publica no resumo da execução |
 | Constantes de categoria | Num único lugar por projeto de teste (de preferência uma classe `TestCategories`: `Integration = "Integracao"`, `LoadCi = "Carga-CI"`, ...), nunca a string repetida |
+| Testes que medem tempo de parede | Classe com `[NotInParallel]` **sem chave** (exclusiva: nenhum outro teste roda junto). Com chave, ela só não roda junto com outras da mesma chave e disputa a CPU com o resto da suíte — num runner de 2 vCPUs isso estoura limites sem regressão nenhuma |
+| Listas de exportadores em memória | Leia uma cópia (`ToArray`) com a aplicação rodando: o exportador adiciona itens em outra thread, sem lock |
 
 ## 📚 Documentação
 
