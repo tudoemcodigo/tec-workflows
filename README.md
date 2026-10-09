@@ -81,6 +81,11 @@ publicar `X.Y.Z`, suba a `<Version>` para a próxima quando quiser novas prévia
 CI do push na `main` valida tudo normalmente, mas não gera prévia (avisa com um `::notice::` e pula o `publicar-previa`).
 Assim um componente pode ficar numa versão publicada (ex.: TEC.Core em `0.0.1`) e ainda receber correções na `main`.
 
+No PR (e na merge queue) o build e o pack usam `<Version>-ci.<run>`, sem publicar: sendo pré-versão, o pack aceita
+dependências TEC.* em prévia (sem o `NU5104`). É o caso de um componente que acompanha a versão nova de outro antes do
+lançamento (ex.: TEC.ORM `0.1.0` usando TEC.Cqrs `0.1.0-preview.1`). A versão estável só sai pelo release, e aí as
+dependências TEC.* também precisam ser estáveis: publique na [ordem](#-ordem-de-publicação).
+
 > [!NOTE]
 > **Número da prévia:** o commit da `main` que definiu a `<Version>` atual gera o `preview.1` e cada commit seguinte da
 > `main` (um por merge de PR) soma 1. A sequência reinicia a cada nova `<Version>`, não consulta o feed, não colide

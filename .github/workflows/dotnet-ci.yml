@@ -165,8 +165,10 @@ jobs:
       # Push na main: <Version do Directory.Build.props>-preview.N, com N sequencial por versão: o commit que definiu a
       # <Version> atual é o 1, e cada commit seguinte da main (--first-parent: um por merge de PR) soma 1. A sequência
       # reinicia a cada nova <Version>, não depende do feed nem colide entre execuções simultâneas, e uma reexecução
-      # gera o mesmo número (o push usa --skip-duplicate). Fora do push na main, ou com a <Version> já lançada (tag
-      # v<Version>): a própria <Version>, sem publicar.
+      # gera o mesmo número (o push usa --skip-duplicate). Com a <Version> já lançada (tag v<Version>): a própria
+      # <Version>, sem publicar. Fora do push na main (PR, merge queue): <Version>-ci.<run>, sem publicar. Como é uma
+      # pré-versão, o pack aceita dependências TEC.* em prévia (NU5104), que é o caso de um componente que acompanha a
+      # versão nova de outro antes do lançamento; a versão estável só sai pelo release, com as dependências estáveis.
       - name: Versão
         id: versao
         shell: bash
@@ -182,7 +184,9 @@ jobs:
           fi
           VERSION="$BASE"
           PUBLISH=false
-          if [ "$PREVIEW" = "true" ] && gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$BASE" >/dev/null 2>&1; then
+          if [ "$PREVIEW" != "true" ]; then
+            VERSION="$BASE-ci.$GITHUB_RUN_NUMBER"
+          elif gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$BASE" >/dev/null 2>&1; then
             # Versão já lançada e mantida de propósito (ex.: só ajustes de build ou documentação): valida tudo, sem prévia
             echo "::notice::A versão $BASE já foi publicada (tag v$BASE): nenhuma prévia gerada. Para publicar novas prévias, suba a <Version> do Directory.Build.props."
             PREVIEW=false
