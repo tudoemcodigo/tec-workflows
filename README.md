@@ -289,7 +289,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    W["tec-workflows<br/>tag v1"] --> C["1️⃣ TEC.Core"] --> V["2️⃣ TEC.Vault"] --> Q["3️⃣ TEC.Cqrs"] --> S["4️⃣ TEC.Security"] --> O["5️⃣ TEC.Observability"] --> R["6️⃣ TEC.ORM"]
+    W["tec-workflows<br/>tag v1"] --> C["1️⃣ TEC.Core"] --> V["2️⃣ TEC.Vault"] --> Q["3️⃣ TEC.Cqrs"] --> S["4️⃣ TEC.Security"] --> O["5️⃣ TEC.Observability"] --> R["6️⃣ TEC.ORM"] --> M["7️⃣ TEC.Messaging"]
 ```
 
 Para cada componente, depois que as dependências dele estiverem no feed:
