@@ -29,6 +29,7 @@ flowchart BT
     Sec["🛡️ TEC.Security<br/><sub>autenticação, autorização</sub>"]
     Obs["📡 TEC.Observability<br/><sub>traces, métricas, logs</sub>"]
     Orm["🗄️ TEC.ORM<br/><sub>persistência</sub>"]
+    Msg["📮 TEC.Messaging<br/><sub>outbox, inbox, RabbitMQ</sub>"]
     Vault --> Core
     Cqrs --> Core
     Sec --> Core
@@ -36,14 +37,16 @@ flowchart BT
     Orm --> Core
     Orm --> Cqrs
     Orm --> Vault
+    Msg --> Core
+    Msg --> Vault
 ```
 
 | Regra | Detalhe |
 |---|---|
-| Só de cima para baixo | `TEC.Core` não depende de ninguém; `TEC.Vault` só do Core; ORM pode usar Core, Cqrs e Vault |
+| Só de cima para baixo | `TEC.Core` não depende de ninguém; `TEC.Vault` só do Core; ORM pode usar Core, Cqrs e Vault; Messaging usa Core e Vault (o pacote `.SqlServer` usa o EF Core direto, sem o ORM) |
 | Cqrs, Security e Observability são independentes entre si | Integração cruzada só por **pacote-ponte opcional** (ex.: `TEC.Cqrs.Observability`), nunca por dependência direta |
 | Observability não é dependência de ninguém | Os componentes emitem `ActivitySource`/`Meter` com nome `TEC.<Componente>` (BCL, sem pacote); o Observability apenas os assina |
-| Sem ciclos | Verificado pela ordem de publicação: Core → Vault → Cqrs → Security → Observability → ORM |
+| Sem ciclos | Verificado pela ordem de publicação: Core → Vault → Cqrs → Security → Observability → ORM → Messaging |
 | Sem duplicidade | Antes de criar utilitário (guard, `Result`, comparação em tempo constante, mascaramento, JSON, hash, Base64Url, leitura limitada de arquivo, descrição de texto não confiável para log, uma execução por chave (`SingleFlight`), mensagens padrão de erro (`ApiResponse.DefaultMessages`)...), use o do `TEC.Core`. Se faltar algo genérico, ele entra no Core |
 | Polyfills | Ficam em `build/Polyfills/` (canônico), compilados como `internal` só nos pacotes. Ex.: use `private readonly Lock _sync = new();` **sem `#if`** — no net8.0 o polyfill cobre |
 | Pacotes separados por dependência pesada | `TEC.X` (abstrações, sem Azure/ASP.NET) + `TEC.X.AspNetCore`, `TEC.X.Azure`... O consumidor só carrega o que usa |
