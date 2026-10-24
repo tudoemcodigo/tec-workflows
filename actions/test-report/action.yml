@@ -1,0 +1,56 @@
+name: Relatório de testes e cobertura (TEC)
+description: >
+  Baixa os artefatos trx-* e cobertura-* dos jobs de teste da execução, publica no resumo a tabela de testes e a
+  cobertura somada (ReportGenerator) e envia o relatório HTML como artefato "relatorio-cobertura". Nunca falha por
+  causa dos testes: quem quebra o pipeline são os jobs de teste.
+
+inputs:
+  coverage-title:
+    description: "Título do relatório de cobertura"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download .trx
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      continue-on-error: true   # testes interrompidos antes do upload: o erro aparece no job de teste
+      with:
+        pattern: trx-*
+        path: resultados
+
+    - name: Download cobertura
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      continue-on-error: true
+      with:
+        pattern: cobertura-*
+        path: cobertura
+
+    - name: Resumo de testes
+      uses: tudoemcodigo/tec-workflows/actions/test-summary@v1
+      with:
+        path: resultados
+
+    - name: Relatório de cobertura
+      if: ${{ hashFiles('cobertura/**/*.cobertura.xml') != '' }}
+      uses: danielpalme/ReportGenerator-GitHub-Action@d3ebf1f760f7d8ab92cc44d9bcfee7ad73722a31 # v5.5.11
+      # Cobertura corrompida (teste interrompido) não derruba o relatório nem o ci-ok: quem falha são os jobs de teste
+      continue-on-error: true
+      with:
+        reports: cobertura/**/*.cobertura.xml
+        targetdir: coverage-report
+        reporttypes: HtmlInline;MarkdownSummaryGithub
+        title: ${{ inputs.coverage-title }}
+
+    - name: Publicar resumo da cobertura
+      if: ${{ hashFiles('coverage-report/SummaryGithub.md') != '' }}
+      shell: bash
+      run: cat coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload cobertura
+      if: ${{ hashFiles('coverage-report/**') != '' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: relatorio-cobertura
+        path: coverage-report/
+        retention-days: 14

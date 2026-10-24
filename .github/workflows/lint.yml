@@ -1,0 +1,56 @@
+name: Lint
+
+# Validação do próprio tec-workflows em todo PR e push na main: actionlint (com shellcheck nos "run"), zizmor
+# (auditoria de segurança dos workflows e actions), shellcheck dos scripts e testes dos scripts Python das actions.
+# As ferramentas vêm do PyPI em versão exata (pipx, já instalado no runner): nenhuma action de terceiros além do checkout.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          shellcheck --version   # já vem na imagem ubuntu-24.04: o actionlint o usa nos blocos "run"
+          pipx run --spec 'actionlint-py==1.7.12.25' actionlint -color
+
+      - name: zizmor
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pipx run 'zizmor==1.31.1' --min-severity low .
+
+      - name: shellcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 -r shellcheck
+
+      - name: Testes dos scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -v

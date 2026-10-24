@@ -1,0 +1,56 @@
+name: Versão (TEC)
+description: >
+  Calcula a versão do componente a partir da <Version> do Directory.Build.props e das tags já lançadas (versao.py):
+  no CI, <Version>-ci.<run> ou a prévia <Version>-preview.N (só se ficar acima de todas as tags); no release, valida a
+  versão digitada (formato, igual à <Version>, tag inexistente e maior que a última lançada). Exige checkout (no CI
+  com prévia, com histórico completo: fetch-depth 0) e contents: read.
+
+inputs:
+  modo:
+    description: "ci ou release"
+    required: true
+  previa:
+    description: "ci: true no push na main (calcula e decide a prévia); false gera <Version>-ci.<run>"
+    default: "false"
+  versao:
+    description: "release: versão digitada (X.Y.Z ou X.Y.Z-rc.N, aceita 'v' inicial)"
+    default: ""
+  token:
+    description: "Token para listar as tags (normalmente github.token)"
+    required: true
+
+outputs:
+  version:
+    description: "Versão calculada ou validada"
+    value: ${{ steps.versao.outputs.version }}
+  publish:
+    description: "true: publicar (prévia do CI ou versão do release)"
+    value: ${{ steps.versao.outputs.publish }}
+
+runs:
+  using: composite
+  steps:
+    - name: Versão
+      id: versao
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        MODO: ${{ inputs.modo }}
+        PREVIA: ${{ inputs.previa }}
+        VERSAO: ${{ inputs.versao }}
+        SCRIPT: ${{ github.action_path }}/versao.py
+      run: |
+        set -euo pipefail
+        TAGS="$RUNNER_TEMP/tags-versao.txt"
+        : > "$TAGS"
+        # matching-refs responde [] quando não há tags: qualquer falha da API (limite, 5xx, permissão) é erro, nunca
+        # "tag inexistente"
+        if ! gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref' > "$TAGS"; then
+          echo "::error::Falha ao listar as tags do repositório pela API do GitHub."
+          exit 1
+        fi
+        python3 "$SCRIPT" "$MODO" --props Directory.Build.props --tags "$TAGS" \
+          --previa "$PREVIA" --run "$GITHUB_RUN_NUMBER" --versao "$VERSAO" | tee "$RUNNER_TEMP/versao.out"
+        grep -E '^(version|publish)=' "$RUNNER_TEMP/versao.out" >> "$GITHUB_OUTPUT"
+        VERSION=$(sed -n 's/^version=//p' "$RUNNER_TEMP/versao.out")
+        echo "### 📦 Versão: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"

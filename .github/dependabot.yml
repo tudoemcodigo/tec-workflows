@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # Workflows (.github/workflows) e composite actions (actions/*): actions fixadas por SHA, atualizadas num PR só
+  - package-ecosystem: github-actions
+    directories: ["/", "/actions/*"]
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # SDK do template/global.json (canônico, copiado para os componentes): rollForward latestPatch fixa o feature band e
+  # o CI usa o patch mais recente dele. Um band novo (ex.: 10.0.4xx -> 10.0.5xx) traz analisadores e regras novas: chega
+  # por PR aqui e vai para os componentes pelo scripts/sync-template.sh, nunca de surpresa num release.
+  - package-ecosystem: dotnet-sdk
+    directory: /template
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "deps"

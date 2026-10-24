@@ -1,0 +1,87 @@
+name: Setup .NET (TEC)
+description: >
+  SDK do global.json + runtimes extras, cache do NuGet pelos packages.lock.json, variáveis de ambiente extras e
+  restore --locked-mode (com a credencial do feed interno só no processo do restore, se private-feed).
+
+inputs:
+  runtimes:
+    description: "Runtimes extras além do SDK do global.json (ex.: 8.0.x para rodar o alvo net8.0)"
+    default: "8.0.x"
+  private-feed:
+    description: "true: credencial da origem tec-interno (GitHub Packages da organização) no restore; o job precisa de packages: read"
+    default: "false"
+  nuget-token:
+    description: "Token de leitura do feed interno (normalmente github.token); obrigatório com private-feed: true"
+    default: ""
+  env:
+    description: "Variáveis extras, uma por linha no formato NOME=valor (ex.: TEC_TESTES_INTEGRACAO=0)"
+    default: ""
+  restore:
+    description: "Projetos/soluções para restaurar com --locked-mode, separados por espaço ou linha (vazio: não restaura)"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        # SDK do global.json: com rollForward latestPatch, o setup-dotnet instala o patch mais recente do feature band
+        # fixado (ex.: 10.0.4xx), o mesmo band exigido na máquina do desenvolvedor; o Dependabot (dotnet-sdk) sobe a
+        # versão do global.json por PR
+        global-json-file: global.json
+        dotnet-version: ${{ inputs.runtimes }}
+        cache: true
+        cache-dependency-path: '**/packages.lock.json'
+
+    - name: Conferir credencial do feed interno
+      if: inputs.private-feed == 'true'
+      shell: bash
+      env:
+        NUGET_TOKEN: ${{ inputs.nuget-token }}
+      run: |
+        set -euo pipefail
+        if [ -z "$NUGET_TOKEN" ]; then
+          echo "::error::private-feed: true exige nuget-token (ex.: github.token, com packages: read no job)."
+          exit 1
+        fi
+
+    # Cada linha é validada antes de ir para o GITHUB_ENV: nome em maiúsculas e valor sem quebra de linha.
+    # O conteúdo vem do YAML do workflow chamador (texto fixo revisado em PR), nunca de dados do evento.
+    - name: Variáveis de ambiente
+      if: inputs.env != ''
+      shell: bash
+      env:
+        EXTRA_ENV: ${{ inputs.env }}
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        while IFS= read -r line; do
+          [ -z "${line//[[:space:]]/}" ] && continue
+          if ! [[ "$line" =~ ^[A-Z_][A-Z0-9_]*=.*$ ]]; then
+            echo "::error::Variável inválida em 'env' (use NOME=valor): $line"
+            exit 1
+          fi
+          echo "$line" >> "$GITHUB_ENV"
+        done <<< "$EXTRA_ENV"
+
+    # O nuget.config de cada repositório (template canônico) já define as origens nuget.org e tec-interno e o
+    # packageSourceMapping. A credencial do tec-interno vai só para o processo do restore, pela variável
+    # NuGetPackageSourceCredentials_tec-interno (o nome tem hífen: passada com "env", não com export). Nada vai para o
+    # disco nem para o ambiente dos passos seguintes (build, testes, scripts). Passo que precise do feed depois disso
+    # (ex.: dotnet list package, BenchmarkDotNet) define a mesma variável só no próprio comando.
+    - name: Restore (lock file obrigatório)
+      if: inputs.restore != ''
+      shell: bash
+      env:
+        TARGETS: ${{ inputs.restore }}
+        PRIVATE_FEED: ${{ inputs.private-feed }}
+        NUGET_TOKEN: ${{ inputs.nuget-token }}
+      run: |
+        set -euo pipefail
+        CRED=()
+        if [ "$PRIVATE_FEED" = "true" ]; then
+          CRED=(env "NuGetPackageSourceCredentials_tec-interno=Username=$GITHUB_ACTOR;Password=$NUGET_TOKEN")
+        fi
+        for target in $TARGETS; do
+          "${CRED[@]}" dotnet restore "$target" --locked-mode
+        done

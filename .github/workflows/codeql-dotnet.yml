@@ -1,0 +1,133 @@
+name: CodeQL (.NET)
+
+# Análise estática de segurança (SAST) do código C#. Chamado pelo dotnet-ci.yml e pelo dotnet-release.yml, em paralelo
+# com build e testes: bloqueia o check "ci-ok" e a publicação, mas não atrasa os testes.
+# Os repositórios lib-tec-* são públicos, e neles o code scanning é gratuito: o SARIF vai para Security -> Code scanning
+# (histórico, anotações no PR, dismiss com justificativa; exige security-events: write, só neste job). O portão local
+# continua: alertas de severidade alta ou crítica (security-severity >= 7.0) falham o job; todos os alertas aparecem
+# numa tabela no resumo da execução e o SARIF fica também no artifact "codeql-sarif" (90 dias).
+#
+# Permissões que o chamador concede: contents: read, actions: read, security-events: write, packages: read
+on:
+  workflow_call:
+    inputs:
+      solution:
+        description: "Solução compilada no build-mode manual"
+        type: string
+        default: ""
+      build-mode:
+        description: "none (sem build, não depende do feed) ou manual (restore + build da solução)"
+        type: string
+        default: none
+      queries:
+        description: "Pacote de consultas: security-extended ou security-and-quality"
+        type: string
+        default: security-extended
+      private-feed:
+        description: "Restaura TEC.* do feed interno (só faz diferença no build-mode manual)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  analisar:
+    name: Analisar (C#)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read            # o codeql-action consulta o workflow run
+      security-events: write   # upload do SARIF para o code scanning
+      packages: read           # restore do feed interno no build-mode manual
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        if: inputs.build-mode == 'manual'
+        uses: tudoemcodigo/tec-workflows/actions/setup-dotnet@v1
+        with:
+          runtimes: ""
+          private-feed: ${{ inputs.private-feed }}
+          nuget-token: ${{ github.token }}
+          restore: ${{ inputs.solution }}
+
+      - name: Inicializar CodeQL
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: csharp
+          build-mode: ${{ inputs.build-mode }}
+          queries: ${{ inputs.queries }}
+
+      - name: Build
+        if: inputs.build-mode == 'manual'
+        env:
+          SOLUTION: ${{ inputs.solution }}
+        run: dotnet build "$SOLUTION" -c Release --no-restore
+
+      - name: Analisar
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: /language:csharp
+          upload-database: false   # só o SARIF vai para o GitHub
+          output: ${{ runner.temp }}/codeql-sarif   # cópia local para o portão e o artifact
+
+      - name: Publicar SARIF
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-sarif
+          path: ${{ runner.temp }}/codeql-sarif
+          if-no-files-found: ignore
+          retention-days: 90   # máximo do repositório público: auditoria de versões publicadas
+
+      # Alertas de severidade alta ou crítica (security-severity >= 7.0) falham o job.
+      # Os demais (média, baixa e qualidade) aparecem como aviso, na tabela do resumo e no code scanning.
+      - name: Verificar alertas
+        shell: bash
+        env:
+          SARIF_DIR: ${{ runner.temp }}/codeql-sarif
+        run: |
+          set -euo pipefail
+          # Severidade por regra: as consultas ficam em tool.extensions; as embutidas, em tool.driver
+          RESULTS=$(jq -c '
+            .runs[]
+            | ([(.tool.driver.rules // [])[], (.tool.extensions // [])[].rules[]?]
+               | map({key: .id, value: ((.properties["security-severity"] // "0") | tonumber)})
+               | from_entries) as $sev
+            | .results[]
+            | {rule: .ruleId, sev: ($sev[.ruleId] // 0),
+               file: (.locations[0].physicalLocation.artifactLocation.uri // ""),
+               line: (.locations[0].physicalLocation.region.startLine // 1),
+               msg: (.message.text | split("\n")[0])}
+          ' "$SARIF_DIR"/*.sarif)
+
+          TOTAL=$(printf '%s' "$RESULTS" | jq -s 'length')
+          BLOCKING=$(printf '%s' "$RESULTS" | jq -sc 'map(select(.sev >= 7.0))')
+          COUNT=$(jq 'length' <<< "$BLOCKING")
+
+          jq -r '.[] | "::error file=\(.file),line=\(.line),title=CodeQL \(.rule) (\(.sev))::\(.msg)"' <<< "$BLOCKING"
+          printf '%s' "$RESULTS" | jq -sr 'map(select(.sev < 7.0))[]
+            | "::warning file=\(.file),line=\(.line),title=CodeQL \(.rule) (\(.sev))::\(.msg)"'
+          {
+            echo "### 🔍 CodeQL: $TOTAL alerta(s), $COUNT de severidade alta ou crítica"
+            echo "Todos os alertas também em **Security → Code scanning** e no artifact \`codeql-sarif\`."
+            if [ "$TOTAL" -gt 0 ]; then
+              echo
+              echo "| Severidade | Regra | Local | Mensagem |"
+              echo "|---:|---|---|---|"
+              # Do mais grave ao menos grave; até 200 linhas (o resumo tem limite de tamanho)
+              printf '%s' "$RESULTS" | jq -sr 'sort_by(-.sev) | .[:200][]
+                | "| \(.sev) | `\(.rule)` | `\(.file):\(.line)` | \(.msg | gsub("\\|"; "/") | gsub("\r?\n"; " ")) |"'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::CodeQL encontrou $COUNT alerta(s) de severidade alta ou crítica."
+            exit 1
+          fi
