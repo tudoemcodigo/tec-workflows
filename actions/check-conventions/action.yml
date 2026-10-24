@@ -1,7 +1,8 @@
 name: Convenções (TEC)
 description: >
-  Confere se os arquivos canônicos do componente (build compartilhado, .editorconfig, nuget.config, dependabot, ...)
-  são idênticos aos de template/ desta mesma versão do tec-workflows, e se os pacotes seguem as convenções mínimas.
+  Confere se os arquivos compartilhados do componente (build, .editorconfig, nuget.config, dependabot, ...)
+  são idênticos ao template desta versão do tec-workflows, preserva README/CHANGELOG específicos e exige a marca
+  Tudo em Código em todos os READMEs.
 
 runs:
   using: composite
@@ -18,13 +19,22 @@ runs:
           if [ ! -f "$rel" ]; then
             echo "::error file=$rel::Arquivo canônico ausente (rode scripts/sync-template.sh do tec-workflows)."
             rc=1
+          # README e CHANGELOG são inicializados pelo template, mas pertencem ao componente.
+          elif [[ "$rel" == "README.md" || "$rel" == "CHANGELOG.md" ]]; then
+            continue
           elif ! cmp -s "$TEMPLATE/$rel" "$rel"; then
             echo "::error file=$rel::Diverge do template do tec-workflows (edite lá e rode scripts/sync-template.sh)."
             rc=1
           fi
         done < <(cd "$TEMPLATE" && find . -type f -print0)
+        while IFS= read -r -d '' readme; do
+          if ! grep -Fq 'tudoemcodigo-icone-512.png' "$readme"; then
+            echo "::error file=$readme::README sem a marca Tudo em Código."
+            rc=1
+          fi
+        done < <(find . -name README.md -not -path './.git/*' -not -path '*/obj/*' -not -path '*/bin/*' -print0)
         if [ "$rc" -eq 0 ]; then
-          echo "### ✅ Arquivos canônicos idênticos ao template" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ✅ Arquivos compartilhados e marca dos READMEs verificados" >> "$GITHUB_STEP_SUMMARY"
         fi
         exit "$rc"
 
@@ -58,27 +68,5 @@ runs:
             rc=1
           fi
         done < <(find . -name '*.csproj' -not -path './.git/*' -print0)
-
-        # Directory.Packages.props: Central Package Management válido
-        if [ -f "Directory.Packages.props" ]; then
-          # PackageVersion duplicado
-          dupes=$(grep -E '<PackageVersion[^>]+Include=' "Directory.Packages.props" 2>/dev/null | sed -E 's/.*Include="([^"]+)".*/\1/' | sort | uniq -d || true)
-          if [ -n "$dupes" ]; then
-            echo "::error file=Directory.Packages.props::PackageVersion duplicado(s): $dupes"
-            rc=1
-          fi
-          # PackageVersion com atributo Version (inválido: deve ser conteúdo do elemento)
-          if grep -Eq '<PackageVersion[^>]+Version=' "Directory.Packages.props"; then
-            echo "::error file=Directory.Packages.props::PackageVersion com atributo Version: use o conteúdo do elemento (<PackageVersion Include=\"X\">1.0.0</PackageVersion>)."
-            rc=1
-          fi
-          # PackageVersion sem versão
-          if grep -Eq '<PackageVersion[^>]+Include=[^>]+/>' "Directory.Packages.props"; then
-            echo "::error file=Directory.Packages.props::PackageVersion auto-fechado sem versão: declare a versão como conteúdo do elemento."
-            rc=1
-          fi
-        else
-          echo "::warning file=Directory.Packages.props::Arquivo não encontrado (Central Package Management esperado)."
-        fi
 
         exit "$rc"

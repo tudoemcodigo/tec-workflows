@@ -47,11 +47,19 @@ while IFS= read -r -d '' file; do
   if [ ! -f "{repo}/$rel" ]; then
     echo "::error file=$rel::Arquivo canônico ausente (rode scripts/sync-template.sh do tec-workflows)."
     rc=1
+  elif [[ "$rel" == "README.md" || "$rel" == "CHANGELOG.md" ]]; then
+    continue
   elif ! cmp -s "$TEMPLATE/$rel" "{repo}/$rel"; then
     echo "::error file=$rel::Diverge do template do tec-workflows (edite lá e rode scripts/sync-template.sh)."
     rc=1
   fi
 done < <(cd "$TEMPLATE" && find . -type f -print0)
+while IFS= read -r -d '' readme; do
+  if ! grep -Fq 'tudoemcodigo-icone-512.png' "$readme"; then
+    echo "::error file=$readme::README sem a marca Tudo em Código."
+    rc=1
+  fi
+done < <(find "{repo}" -name README.md -not -path '*/.git/*' -not -path '*/obj/*' -not -path '*/bin/*' -print0)
 exit "$rc"
 """],
                     capture_output=True,
@@ -88,24 +96,6 @@ while IFS= read -r -d '' proj; do
   fi
 done < <(find . -name '*.csproj' -not -path './.git/*' -print0)
 
-# Directory.Packages.props
-if [ -f "Directory.Packages.props" ]; then
-  dupes=$(grep -E '<PackageVersion[^>]+Include=' "Directory.Packages.props" 2>/dev/null | sed -E 's/.*Include="([^"]+)".*/\\1/' | sort | uniq -d || true)
-  if [ -n "$dupes" ]; then
-    echo "::error file=Directory.Packages.props::PackageVersion duplicado(s): $dupes"
-    rc=1
-  fi
-  if grep -Eq '<PackageVersion[^>]+Version=' "Directory.Packages.props"; then
-    echo "::error file=Directory.Packages.props::PackageVersion com atributo Version: use o conteúdo do elemento (<PackageVersion Include=\\"X\\">1.0.0</PackageVersion>)."
-    rc=1
-  fi
-  if grep -Eq '<PackageVersion[^>]+Include=[^>]+/>' "Directory.Packages.props"; then
-    echo "::error file=Directory.Packages.props::PackageVersion auto-fechado sem versão: declare a versão como conteúdo do elemento."
-    rc=1
-  fi
-else
-  echo "::warning file=Directory.Packages.props::Arquivo não encontrado (Central Package Management esperado)."
-fi
 exit "$rc"
 """],
                     capture_output=True,
@@ -170,6 +160,23 @@ exit "$rc"
         self.assertEqual(rc, 1)
         self.assertIn("Diverge do template", out)
 
+    def test_component_readme_and_changelog_can_be_customized(self) -> None:
+        self.create_minimal_repo()
+        (self.repo / "README.md").write_text(
+            '<img src="https://www.tudoemcodigo.com/marca/PNG/tudoemcodigo-icone-512.png" alt="Tudo em Código">\n# TEC.Core\n',
+            encoding="utf-8",
+        )
+        (self.repo / "CHANGELOG.md").write_text("# TEC.Core 0.0.1\n", encoding="utf-8")
+        rc, out = self.run_check()
+        self.assertEqual(rc, 0, out)
+
+    def test_readme_without_brand_logo_fails(self) -> None:
+        self.create_minimal_repo()
+        (self.repo / "README.md").write_text("# TEC.Test\n", encoding="utf-8")
+        rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("README sem a marca Tudo em Código", out)
+
     def test_missing_notice_fails(self) -> None:
         self.create_minimal_repo()
         (self.repo / "NOTICE").unlink()
@@ -226,45 +233,20 @@ exit "$rc"
         self.assertEqual(rc, 1)
         self.assertIn("Versão no csproj", out)
 
-    def test_duplicate_package_version_fails(self) -> None:
+    def test_central_package_management_accepts_tfm_specific_versions(self) -> None:
         self.create_minimal_repo()
         dpp = self.repo / "Directory.Packages.props"
         dpp.write_text("""<Project>
-  <ItemGroup>
-    <PackageVersion Include="TEC.Core" Version="0.0.1" />
-    <PackageVersion Include="TEC.Core" Version="0.0.2" />
+  <ItemGroup Condition=\"'$(TargetFramework)' == 'net8.0'\">
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+  </ItemGroup>
+  <ItemGroup Condition=\"'$(TargetFramework)' == 'net10.0'\">
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
   </ItemGroup>
 </Project>
 """, encoding="utf-8")
         rc, out = self.run_check()
-        self.assertEqual(rc, 1)
-        self.assertIn("PackageVersion duplicado", out)
-
-    def test_package_version_with_version_attribute_fails(self) -> None:
-        self.create_minimal_repo()
-        dpp = self.repo / "Directory.Packages.props"
-        dpp.write_text("""<Project>
-  <ItemGroup>
-    <PackageVersion Include="TEC.Core" Version="0.0.1" />
-  </ItemGroup>
-</Project>
-""", encoding="utf-8")
-        rc, out = self.run_check()
-        self.assertEqual(rc, 1)
-        self.assertIn("PackageVersion com atributo Version", out)
-
-    def test_self_closing_package_version_fails(self) -> None:
-        self.create_minimal_repo()
-        dpp = self.repo / "Directory.Packages.props"
-        dpp.write_text("""<Project>
-  <ItemGroup>
-    <PackageVersion Include="TEC.Core" />
-  </ItemGroup>
-</Project>
-""", encoding="utf-8")
-        rc, out = self.run_check()
-        self.assertEqual(rc, 1)
-        self.assertIn("PackageVersion auto-fechado sem versão", out)
+        self.assertEqual(rc, 0, out)
 
 
 if __name__ == "__main__":

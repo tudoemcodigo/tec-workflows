@@ -9,7 +9,8 @@
 #   scripts/sync-template.sh                      todos os TEC.* vizinhos deste repositório
 #   scripts/sync-template.sh ../TEC.Vault ...     só os informados
 #
-# Os arquivos de template/ nunca são editados nos componentes: o job "Convenções" do CI compara as cópias.
+# Os arquivos compartilhados de template/ nunca são editados nos componentes. README e CHANGELOG são modelos iniciais:
+# são copiados somente quando ainda não existem e depois pertencem ao componente.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,6 +36,9 @@ for repo in "$@"; do
     continue
   fi
   (cd "$TEMPLATE" && find . -type f -print0) | while IFS= read -r -d '' file; do
+    if [[ "$file" == "./README.md" || "$file" == "./CHANGELOG.md" ]] && [ -f "$repo/$file" ]; then
+      continue
+    fi
     mkdir -p "$repo/$(dirname "$file")"
     cp "$TEMPLATE/$file" "$repo/$file"
   done

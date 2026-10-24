@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > Este guia é a referência única para **todos** os repositórios `lib-tec-*`. Uma regra nova entra aqui primeiro e só
 > depois é aplicada nos componentes. Arquivos canônicos (build, `.editorconfig`, `nuget.config`, ...) ficam em
-> [`template/`](../template) e são verificados pelo CI.
+> [`template/`](../template) e são verificados pelo CI. README e CHANGELOG são modelos iniciais: cada componente mantém o próprio conteúdo; o README segue a estrutura e a marca Tudo em Código.
 
 ## 📑 Sumário
 

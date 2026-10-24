@@ -36,7 +36,12 @@
     <TecReference Update="@(TecReference)" TecComponent="$([System.Text.RegularExpressions.Regex]::Match('%(Identity)', '^TEC\.[^.]+'))" />
     <TecReference Update="@(TecReference)" TecProjectPath="$(TecComponentsRoot)%(TecComponent)/%(Identity)/%(Identity).csproj" />
     <TecReference Update="@(TecReference)" TecProjectPathAlt="$(TecComponentsRoot)lib-$([System.String]::Copy('%(TecComponent)').ToLowerInvariant().Replace('.', '-'))/%(Identity)/%(Identity).csproj" />
-    <TecReference Update="@(TecReference)" TecProjectPath="%(TecProjectPathAlt)" Condition="!Exists('%(TecProjectPath)') and Exists('%(TecProjectPathAlt)')" />
+    <!-- Avaliar Exists em Condition com metadados customizados causa MSB4191. Materialize o resultado no item e filtre por metadata. -->
+    <TecReference Update="@(TecReference)"
+                  TecProjectPathExists="$([System.IO.File]::Exists('%(TecProjectPath)'))"
+                  TecProjectPathAltExists="$([System.IO.File]::Exists('%(TecProjectPathAlt)'))" />
+    <TecReference Update="@(TecReference-&gt;WithMetadataValue('TecProjectPathExists', 'False')-&gt;WithMetadataValue('TecProjectPathAltExists', 'True'))"
+                  TecProjectPath="%(TecProjectPathAlt)" />
     <TecReference Update="@(TecReference)" TecLocal="False" />
     <TecReference Update="@(TecReference)" TecLocal="$([System.IO.File]::Exists('%(TecProjectPath)'))" Condition="'$(TecUseLocalProjects)' == 'true'" />
 

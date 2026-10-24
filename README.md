@@ -51,10 +51,10 @@ Workflows reutilizáveis · Composite actions · Arquivos canônicos de build ·
 | [`actions/versao`](actions/versao/action.yml) | Composite action | Versão do CI (`-ci.<run>` ou prévia) e validação da versão do release ([`versao.py`](actions/versao/versao.py), testes em [`tests/`](tests)) |
 | [`actions/test-report`](actions/test-report/action.yml) | Composite action | Junta os `.trx` e a cobertura dos jobs de teste no resumo da execução |
 | [`actions/test-summary`](actions/test-summary/action.yml) | Composite action | Consolida `.trx` de vários jobs no resumo (aprovados, falhas, pulados com motivo) |
-| [`actions/check-conventions`](actions/check-conventions/action.yml) | Composite action | Compara os arquivos canônicos do componente com `template/` e valida convenções dos csproj |
+| [`actions/check-conventions`](actions/check-conventions/action.yml) | Composite action | Compara os arquivos canônicos do componente com `template/` (README e CHANGELOG mantêm conteúdo próprio) e valida convenções dos csproj |
 | [`actions/release-gates`](actions/release-gates/action.yml) | Composite action | Exige consulta válida de PRs e `ci-ok` mais recente aprovado antes do release |
 | [`template/`](template) | Arquivos canônicos | Build compartilhado (`build/Tec.Build.props`/`.targets`), `.editorconfig`, `nuget.config`, `.gitignore`, `dependabot.yml`... |
-| [`scripts/sync-template.sh`](scripts/sync-template.sh) | Script | Copia `template/` para os repositórios vizinhos |
+| [`scripts/sync-template.sh`](scripts/sync-template.sh) | Script | Copia `template/` para os repositórios vizinhos; preserva README/CHANGELOG existentes |
 | [`scripts/validate-conventions.sh`](scripts/validate-conventions.sh) | Script | Verifica localmente template, `NOTICE` e convenções de projetos consumidores |
 | [`docs/padroes.md`](docs/padroes.md) | Guia | Regras de arquitetura, código, segurança, concorrência, testes, documentação e CI/CD |
 | [`AGENTS.md`](AGENTS.md) | Guia para agentes de IA | Mapa do repositório, contratos, regras de alteração e verificações |
@@ -237,7 +237,7 @@ Entradas dos demais workflows reutilizáveis e das actions (chamados direto pelo
 
 ## 🧩 Template (arquivos canônicos)
 
-Arquivos que **devem ser idênticos** em todos os componentes. Nunca edite a cópia no componente: altere aqui e sincronize.
+Os arquivos compartilhados abaixo **devem ser idênticos** em todos os componentes. Nunca edite a cópia no componente: altere aqui e sincronize. `README.md` e `CHANGELOG.md` são modelos iniciais: mantenha o padrão de apresentação, mas descreva o produto, a versão e as mudanças reais de cada componente. O README deve exibir a marca Tudo em Código.
 
 | Arquivo | Conteúdo |
 |---|---|
@@ -269,7 +269,7 @@ Cada componente fica só com o que é dele:
 </Project>
 ```
 
-O job **Convenções** do CI falha se um arquivo canônico divergir, se um csproj declarar `Version` em `PackageReference`/`<Version>`, ou se referenciar um componente TEC.* por `PackageReference`.
+O job **Convenções** do CI falha se um arquivo compartilhado divergir, se um csproj declarar `Version` em `PackageReference`/`<Version>`, ou se referenciar um componente TEC.* por `PackageReference`. Versões por TFM em `Directory.Packages.props` são válidas; o restore do NuGet valida essas declarações.
 
 ---
 

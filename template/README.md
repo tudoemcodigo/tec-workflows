@@ -1,3 +1,7 @@
+<div align="center">
+
+<img src="https://www.tudoemcodigo.com/marca/PNG/tudoemcodigo-icone-512.png" alt="Tudo em Código" width="120" />
+
 [🏠 Tudo em Código](https://github.com/tudoemcodigo) › [📦 TEC.X](https://github.com/tudoemcodigo/TEC.X)
 
 # TEC.X
@@ -11,6 +15,8 @@
 [![NuGet](https://img.shields.io/badge/nuget-GitHub%20Packages-0969da?logo=github)](https://github.com/orgs/tudoemcodigo/packages)
 [![SLSA](https://img.shields.io/badge/SLSA-Level%202+-0969da?logo=security)](README.md#-seguran%C3%A7a)
 [![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](LICENSE)
+
+</div>
 
 ## 📑 Sumário
 

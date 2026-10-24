@@ -28,6 +28,9 @@ while IFS= read -r -d '' file; do
   if [ ! -f "$target" ]; then
     echo "❌ FALTANDO: $rel (rode scripts/sync-template.sh do tec-workflows)"
     rc=1
+  # README e CHANGELOG são inicializados pelo template, mas pertencem ao componente.
+  elif [[ "$rel" == "README.md" || "$rel" == "CHANGELOG.md" ]]; then
+    echo "✅ OK: $rel (conteúdo específico do componente)"
   elif ! cmp -s "$TEMPLATE/$rel" "$target"; then
     echo "❌ DIVERGÊNCIA: $rel difere do template (edite em template/ e rode scripts/sync-template.sh)"
     rc=1
@@ -35,6 +38,13 @@ while IFS= read -r -d '' file; do
     echo "✅ OK: $rel"
   fi
 done < <(cd "$TEMPLATE" && find . -type f -print0)
+
+while IFS= read -r -d '' readme; do
+  if ! grep -Fq 'tudoemcodigo-icone-512.png' "$readme"; then
+    echo "❌ FALTA LOGO: ${readme#"$REPO"/} (inclua a marca Tudo em Código no README)"
+    rc=1
+  fi
+done < <(find "$REPO" -name README.md -not -path '*/.git/*' -not -path '*/obj/*' -not -path '*/bin/*' -print0)
 
 # 2. NOTICE
 echo
@@ -69,21 +79,6 @@ while IFS= read -r -d '' proj; do
   if grep -Eq '<(Version|PackageVersion|VersionPrefix|VersionSuffix)>' "$proj"; then
     echo "❌ $proj_rel: Versão no csproj (<Version>, <PackageVersion>, <VersionPrefix>, <VersionSuffix>) — a versão é única por repositório (Directory.Build.props)"
     proj_errors=1
-  fi
-
-  # Directory.Packages.props: versões declaradas e não duplicadas
-  if [ -f "$REPO/Directory.Packages.props" ]; then
-    # Verifica se há PackageVersion duplicado
-    dupes=$(grep -E '<PackageVersion[^>]+Include=' "$REPO/Directory.Packages.props" | sed -E 's/.*Include="([^"]+)".*/\1/' | sort | uniq -d)
-    if [ -n "$dupes" ]; then
-      echo "❌ $proj_rel: Directory.Packages.props tem PackageVersion duplicado(s): $dupes"
-      proj_errors=1
-    fi
-    # Verifica se PackageVersion tem Version
-    if grep -Eq '<PackageVersion[^>]+Version=' "$REPO/Directory.Packages.props"; then
-      echo "❌ $proj_rel: Directory.Packages.props tem PackageVersion com atributo Version — use o conteúdo do elemento"
-      proj_errors=1
-    fi
   fi
 
   if [ "$proj_errors" -eq 0 ]; then
