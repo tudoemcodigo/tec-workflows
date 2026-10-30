@@ -1,12 +1,12 @@
 name: Setup .NET (TEC)
 description: >
-  SDK do global.json + runtimes extras, cache do NuGet pelos packages.lock.json, variáveis de ambiente extras e
+  SDK do global.json (+ runtimes extras opcionais), cache do NuGet pelos packages.lock.json, variáveis de ambiente extras e
   restore --locked-mode (com a credencial do feed interno só no processo do restore, se private-feed).
 
 inputs:
   runtimes:
-    description: "Runtimes extras além do SDK do global.json (ex.: 8.0.x para rodar o alvo net8.0)"
-    default: "8.0.x"
+    description: "Runtimes extras além do SDK do global.json, no formato do actions/setup-dotnet (vazio: só o SDK)"
+    default: ""
   private-feed:
     description: "true: credencial da origem tec-interno (GitHub Packages da organização) no restore; o job precisa de packages: read"
     default: "false"
@@ -27,8 +27,8 @@ runs:
       uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
         # SDK do global.json: com rollForward latestPatch, o setup-dotnet instala o patch mais recente do feature band
-        # fixado (ex.: 10.0.4xx), o mesmo band exigido na máquina do desenvolvedor; o Dependabot (dotnet-sdk) sobe a
-        # versão do global.json por PR
+        # fixado (ex.: 10.0.4xx), o mesmo band exigido na máquina do desenvolvedor; o Dependabot (dotnet-sdk) sobe o
+        # template/global.json do tec-workflows por PR, e os componentes recebem a nova versão pelo sync-template.sh
         global-json-file: global.json
         dotnet-version: ${{ inputs.runtimes }}
         cache: true

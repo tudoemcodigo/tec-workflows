@@ -23,8 +23,8 @@ spec.loader.exec_module(resumo_testes)
 TRX_TEMPLATE = """<?xml version="1.0" encoding="utf-8"?>
 <TestRun id="run1" name="test" runUser="user" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
   <TestDefinitions>
-    <UnitTest id="ut1" name="Test1" storage="net8.0/Test1.dll" />
-    <UnitTest id="ut2" name="Test2" storage="net8.0/Test2.dll" />
+    <UnitTest id="ut1" name="Test1" storage="net10.0/Test1.dll" />
+    <UnitTest id="ut2" name="Test2" storage="net10.0/Test2.dll" />
     <UnitTest id="ut3" name="Test3" storage="net10.0/Test3.dll" />
   </TestDefinitions>
   <Results>
@@ -42,7 +42,7 @@ TRX_TEMPLATE = """<?xml version="1.0" encoding="utf-8"?>
 TRX_TEMPLATE_2 = """<?xml version="1.0" encoding="utf-8"?>
 <TestRun id="run2" name="test2" runUser="user" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
   <TestDefinitions>
-    <UnitTest id="ut1" name="Test1" storage="net8.0/Test1.dll" />
+    <UnitTest id="ut1" name="Test1" storage="net10.0/Test1.dll" />
     <UnitTest id="ut3" name="Test3" storage="net10.0/Test3.dll" />
   </TestDefinitions>
   <Results>
@@ -55,7 +55,7 @@ TRX_TEMPLATE_2 = """<?xml version="1.0" encoding="utf-8"?>
 TRX_MALFORMED = """<?xml version="1.0" encoding="utf-8"?>
 <TestRun id="run3" name="test3" runUser="user" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
   <TestDefinitions>
-    <UnitTest id="ut4" name="Test4" storage="net8.0/Test4.dll" />
+    <UnitTest id="ut4" name="Test4" storage="net10.0/Test4.dll" />
   </TestDefinitions>
   <Results>
     <UnitTestResult testId="ut4" testName="Test4" outcome="Passed" />
@@ -125,9 +125,8 @@ class TestResumoTestes(unittest.TestCase):
         self.assertIn("bad.trx", out)
 
     def test_tfm_extraction(self) -> None:
-        self.assertEqual(resumo_testes.alvo("net8.0/MyTest.dll"), "net8.0")
-        self.assertEqual(resumo_testes.alvo("/src/bin/Release/net8.0/MyTest.dll"), "net8.0")
         self.assertEqual(resumo_testes.alvo("net10.0/MyTest.dll"), "net10.0")
+        self.assertEqual(resumo_testes.alvo("/src/bin/Release/net10.0/MyTest.dll"), "net10.0")
         self.assertEqual(resumo_testes.alvo("something/net6.0/other.dll"), "net6.0")
         self.assertEqual(resumo_testes.alvo("no-tfm-here.dll"), "?")
         self.assertEqual(resumo_testes.alvo(""), "?")

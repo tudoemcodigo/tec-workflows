@@ -10,7 +10,7 @@ Workflows reutilizáveis · Composite actions · Arquivos canônicos de build ·
 
 [![CI / Lint](https://github.com/tudoemcodigo/tec-workflows/actions/workflows/lint.yml/badge.svg)](https://github.com/tudoemcodigo/tec-workflows/actions/workflows/lint.yml)
 [![Versão](https://img.shields.io/badge/vers%C3%A3o-v1.0.0-blue)](https://github.com/tudoemcodigo/tec-workflows/releases)
-[![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4?logo=dotnet&logoColor=white)](template/global.json)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](template/global.json)
 [![DevSecOps](https://img.shields.io/badge/DevSecOps-actionlint%20%2B%20zizmor-brightgreen?logo=github&logoColor=white)](.github/workflows/lint.yml)
 [![SLSA](https://img.shields.io/badge/SLSA-Level%202+-0969da?logo=security)](README.md#-segurança)
 [![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](LICENSE)
@@ -44,15 +44,15 @@ Workflows reutilizáveis · Composite actions · Arquivos canônicos de build ·
 | [`dotnet-ci.yml`](.github/workflows/dotnet-ci.yml) | Workflow reutilizável | Validação de PR e do push na `main`: convenções, build + pack, unitários em matriz, integração e CodeQL **em paralelo**; check único `ci-ok`. No push na `main`, publica a prévia `<Version>-preview.N`. Sem testes de carga |
 | [`dotnet-release.yml`](.github/workflows/dotnet-release.yml) | Workflow reutilizável | Publicação de versão estável ou `-rc.N`: convenções, pack, unitários em matriz + cobertura e CodeQL, depois tag + Release + GitHub Packages |
 | [`dotnet-test.yml`](.github/workflows/dotnet-test.yml) | Workflow reutilizável | Job de testes genérico (matriz, integração com containers/Azure OIDC, carga); usado pelos outros dois e pelo `performance.yml` dos componentes |
-| [`dotnet-benchmark.yml`](.github/workflows/dotnet-benchmark.yml) | Workflow reutilizável | BenchmarkDotNet `net8.0` × `net10.0` com relatório no resumo |
+| [`dotnet-benchmark.yml`](.github/workflows/dotnet-benchmark.yml) | Workflow reutilizável | BenchmarkDotNet no `net10.0` com relatório no resumo |
 | [`codeql-dotnet.yml`](.github/workflows/codeql-dotnet.yml) | Workflow reutilizável | CodeQL C#, SARIF no code scanning e em artifact, todos os alertas no resumo, falha com alertas de severidade ≥ 7,0 |
 | [`lint.yml`](.github/workflows/lint.yml) | Workflow deste repositório | actionlint (com shellcheck), zizmor, shellcheck e testes dos scripts em todo PR e push na `main` |
-| [`actions/setup-dotnet`](actions/setup-dotnet/action.yml) | Composite action | SDK do `global.json` + runtimes, cache NuGet pelos lock files, variáveis extras e `restore --locked-mode` (credencial do `tec-interno` só no processo do restore) |
+| [`actions/setup-dotnet`](actions/setup-dotnet/action.yml) | Composite action | SDK do `global.json` (+ runtimes extras opcionais), cache NuGet pelos lock files, variáveis extras e `restore --locked-mode` (credencial do `tec-interno` só no processo do restore) |
 | [`actions/versao`](actions/versao/action.yml) | Composite action | Versão do CI (`-ci.<run>` ou prévia) e validação da versão do release ([`versao.py`](actions/versao/versao.py), testes em [`tests/`](tests)) |
 | [`actions/test-report`](actions/test-report/action.yml) | Composite action | Junta os `.trx` e a cobertura dos jobs de teste no resumo da execução |
 | [`actions/test-summary`](actions/test-summary/action.yml) | Composite action | Consolida `.trx` de vários jobs no resumo (aprovados, falhas, pulados com motivo) |
 | [`actions/check-conventions`](actions/check-conventions/action.yml) | Composite action | Compara os arquivos canônicos do componente com `template/` (README e CHANGELOG mantêm conteúdo próprio) e valida convenções dos csproj |
-| [`actions/release-gates`](actions/release-gates/action.yml) | Composite action | Exige consulta válida de PRs e `ci-ok` mais recente aprovado antes do release |
+| [`actions/release-gates`](actions/release-gates/action.yml) | Composite action | Exige consulta válida de PRs e `ci-ok` mais recente do GitHub Actions aprovado antes do release |
 | [`template/`](template) | Arquivos canônicos | Build compartilhado (`build/Tec.Build.props`/`.targets`), `.editorconfig`, `nuget.config`, `.gitignore`, `dependabot.yml`... |
 | [`scripts/sync-template.sh`](scripts/sync-template.sh) | Script | Copia `template/` para os repositórios vizinhos; preserva README/CHANGELOG existentes |
 | [`scripts/validate-conventions.sh`](scripts/validate-conventions.sh) | Script | Verifica localmente template, `NOTICE` e convenções de projetos consumidores |
@@ -69,7 +69,7 @@ Workflows reutilizáveis · Composite actions · Arquivos canônicos de build ·
 flowchart LR
     subgraph PR["🔀 Pull request / push na main → dotnet-ci.yml"]
         direction LR
-        CH["changes<br/><sub>só docs? pula</sub>"] --> BP["build + pack"] & U1["unit net10.0<br/>+ cobertura"] & U2["unit net8.0"] & U3["unit sem ICU"] & IT["integração<br/><sub>containers / Azure</sub>"] & CQ["CodeQL"]
+        CH["changes<br/><sub>só docs? pula</sub>"] --> BP["build + pack"] & U1["unit net10.0<br/>+ cobertura"] & U3["unit sem ICU"] & IT["integração<br/><sub>containers / Azure</sub>"] & CQ["CodeQL"]
         CV["convenções<br/><sub>sempre roda</sub>"]
         U1 & U2 & U3 & IT --> RP["relatório<br/><sub>trx + cobertura somada</sub>"]
         CV & BP & RP & CQ --> OK["✅ ci-ok"]
@@ -77,7 +77,7 @@ flowchart LR
     end
     subgraph REL["⌨️ release.yml → dotnet-release.yml"]
         direction LR
-        V["validar versão<br/><sub>X.Y.Z · zero PRs · ci-ok</sub>"] --> G["convenções · pack ·<br/>unit ×3 + cobertura · CodeQL"] --> TAG["🏷️ tag + Release<br/><sub>+ SLSA Provenance</sub>"] --> PUB["📦 GitHub Packages"]
+        V["validar versão<br/><sub>X.Y.Z · zero PRs · ci-ok</sub>"] --> G["convenções · pack ·<br/>unit ×2 + cobertura · CodeQL"] --> TAG["🏷️ tag + Release<br/><sub>+ SLSA Provenance</sub>"] --> PUB["📦 GitHub Packages"]
     end
     subgraph PERF["⌨️ performance.yml (só manual)"]
         RA["rápida<br/><sub>Carga-CI</sub>"] ~~~ HV["pesados<br/><sub>soak, volume, segurança</sub>"] ~~~ BM["benchmarks"]
@@ -104,7 +104,9 @@ de gerar prévias de `X.Y.Z` (avisa com `::warning::`) até a `<Version>` subir 
 uma versão maior que a `<Version>`.
 
 O **Publicar versão** aplica portões estritos de orquestração:
-- Confere se o commit atual da `main` possui o check `ci-ok` aprovado.
+- Confere se o commit atual da `main` possui o check `ci-ok` aprovado. Só conta o check run criado pelo GitHub Actions
+  (`app.slug` igual a `github-actions`): um check com o mesmo nome vindo de outro GitHub App, ou sem o campo `app`, é
+  ignorado, e sem nenhum `ci-ok` do Actions a publicação é bloqueada.
 - Confere a ausência de Pull Requests abertos visando a `main` (bloqueio padrão; `allow-open-prs: true` é uma exceção explícita).
 - Confere a versão digitada: formato `X.Y.Z` ou `X.Y.Z-rc.N`, com `X.Y.Z` **igual** à `<Version>` do `Directory.Build.props`, tag ainda inexistente e maior que a última versão lançada (`1.0.0-rc.1` < `1.0.0-rc.2` < `1.0.0` < `1.0.1`). Para lançar outra versão, ajuste a `<Version>` num PR antes.
 - Gera atestado criptográfico SLSA de proveniência (`actions/attest-build-provenance`) nos `.nupkg`.
@@ -201,7 +203,7 @@ O `release.yml` (permissões `contents: write`, `packages: write`, `actions: rea
 | Entrada | `ci` | `release` | Padrão | Uso |
 |---|:---:|:---:|---|---|
 | `solution` | ✅ | ✅ | — | Compilada inteira e empacotada (só projetos `IsPackable`) |
-| `unit-tests` | ✅ | ✅ | — | Matriz `net10.0` (cobertura) · `net8.0` · `net10.0` sem ICU |
+| `unit-tests` | ✅ | ✅ | — | Matriz `net10.0` (cobertura) · `net10.0` sem ICU |
 | `version` | — | ✅ | — | `X.Y.Z` ou `X.Y.Z-rc.N` (aceita `v` inicial), com `X.Y.Z` = `<Version>` do `Directory.Build.props` e maior que a última versão lançada (prévias saem só do CI, no push na `main`) |
 | `publish-environment` | — | ✅ | `publicacao` | Environment dos jobs que criam a tag/Release e publicam no feed: revisores obrigatórios e deployment branches = `main` (configure no repositório) |
 | `allow-open-prs` | — | ✅ | `false` | Bloqueia a publicação se houver PRs abertos visando a `main` (garante que tudo esteja integrado antes de publicar) |
@@ -212,10 +214,11 @@ O `release.yml` (permissões `contents: write`, `packages: write`, `actions: rea
 | `azure-client-id` / `azure-tenant-id` | ✅ | — | vazio | Login OIDC na integração, **só na main e fora de PR**. Só o job de integração com Azure recebe `id-token: write`; unitários, release e carga rodam sem ele |
 | `azure-environment` | ✅ | — | vazio | Environment do job de integração com Azure (ex.: `testes-azure`): a credencial federada passa a usar o sujeito `environment:<nome>` em vez de `ref:refs/heads/main` |
 | `azure-env` | ✅ | — | vazio | `NOME=valor` aplicados **só depois do login no Azure** (ex.: URI do cofre de testes): em PR os testes de Azure se pulam |
-| `codeql-build-mode` / `codeql-queries` | ✅ | ✅ | `none` / `security-extended` | `manual` + `security-and-quality` se o componente quiser |
+| `codeql-build-mode` / `codeql-queries` | ✅ | ✅ | `ci`: vazio (`manual` com `private-feed: true`, senão `none`); `release`: `none` · `security-extended` | `manual` + `security-and-quality` se o componente quiser. No `release`, informe `manual` para analisar com o mesmo modo do CI |
 | `coverage-title` | ✅ | ✅ | nome do repositório | Título do relatório de cobertura somada |
 | `docs-pattern` | ✅ | — | docs, LICENSE, CHANGELOG, READMEs de samples/.github | PR só com esses arquivos pula os jobs pesados (os READMEs dos pacotes vão no `.nupkg` e não entram) |
 | secret `test-env` | ✅ | — | — | `NOME=valor` por linha, mascarados no log (integração) |
+| secret `nuget-publish-token` | ✅ | ✅ | `github.token` | Token com `packages: write` para o push no feed (prévia no `ci`, versão no `release`). Opcional: sem ele vale o `github.token` do job |
 
 Entradas dos demais workflows reutilizáveis e das actions (chamados direto pelo `performance.yml` dos componentes ou pelos workflows acima):
 
@@ -228,7 +231,7 @@ Entradas dos demais workflows reutilizáveis e das actions (chamados direto pelo
 | `dotnet-test.yml` | `azure-client-id` · `azure-tenant-id` · `azure-environment` · `azure-env` | vazio | Mesmo significado do `dotnet-ci.yml`; secret `test-env` idem |
 | `dotnet-benchmark.yml` | `project` (obrigatória) · `filter` · `private-feed` | — · `*` · `false` | Projeto de benchmarks, filtro do BenchmarkDotNet (`*` = todos) |
 | `codeql-dotnet.yml` | `solution` · `build-mode` · `queries` · `private-feed` | vazio · `none` · `security-extended` · `false` | `solution` e `private-feed` só importam com `build-mode: manual` |
-| `actions/setup-dotnet` | `runtimes` · `private-feed` · `nuget-token` · `env` · `restore` | `8.0.x` · `false` · vazio · vazio · vazio | `nuget-token` é obrigatório com `private-feed: true` |
+| `actions/setup-dotnet` | `runtimes` · `private-feed` · `nuget-token` · `env` · `restore` | vazio · `false` · vazio · vazio · vazio | `nuget-token` é obrigatório com `private-feed: true` |
 | `actions/versao` | `modo` (`ci`/`release`) · `previa` · `versao` · `token` | — · `false` · vazio · — | Saídas `version` e `publish` |
 | `actions/test-summary` | `path` (obrigatória) · `ignore` | — · vazio | Pasta dos `.trx`; padrões fnmatch de `.trx` a ignorar |
 | `actions/test-report` | `coverage-title` (obrigatória) | — | Baixa `trx-*`/`cobertura-*` e gera o artefato `relatorio-cobertura` |
@@ -241,9 +244,8 @@ Os arquivos compartilhados abaixo **devem ser idênticos** em todos os component
 
 | Arquivo | Conteúdo |
 |---|---|
-| `build/Tec.Build.props` | Alvos `net8.0;net10.0`, Central Package Management, lock file, `NuGetAudit`, analisadores, `TreatWarningsAsErrors` nos pacotes, AOT, metadados NuGet, README/ícone no pacote, `InternalsVisibleTo` dos testes |
+| `build/Tec.Build.props` | Alvo `net10.0` (em `TargetFrameworks`, para um projeto poder redefinir), Central Package Management, lock file, `NuGetAudit`, analisadores, `TreatWarningsAsErrors` nos pacotes, AOT, metadados NuGet, README/ícone no pacote, `InternalsVisibleTo` dos testes |
 | `build/Tec.Build.targets` | `<TecReference>`: PackageReference do `tec-interno` por padrão (máquina e CI); ProjectReference para o repositório vizinho só com `-p:TecUseLocalProjects=true` (ignorado no CI) |
-| `build/Polyfills/*.cs` | APIs modernas para o `net8.0` (ex.: `System.Threading.Lock`), compiladas como `internal` só nos pacotes: o código usa `Lock` sem `#if`. Satélite que enxerga internos do núcleo remove a cópia local (`<Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />`) |
 | `Directory.Build.targets` | Importa o `build/Tec.Build.targets` |
 | `.editorconfig` | Estilo aplicado no build |
 | `nuget.config` | Origens `nuget.org` + `tec-interno` e `packageSourceMapping` (TEC.* só do feed interno) |
@@ -269,7 +271,7 @@ Cada componente fica só com o que é dele:
 </Project>
 ```
 
-O job **Convenções** do CI falha se um arquivo compartilhado divergir, se um csproj declarar `Version` em `PackageReference`/`<Version>`, ou se referenciar um componente TEC.* por `PackageReference`. Versões por TFM em `Directory.Packages.props` são válidas; o restore do NuGet valida essas declarações.
+O job **Convenções** do CI falha se um arquivo compartilhado divergir, se um csproj declarar `Version` em `PackageReference`/`<Version>`, ou se referenciar um componente TEC.* por `PackageReference`. Versões declaradas no `Directory.Packages.props` (inclusive com `Condition`) não entram nessa checagem; o restore do NuGet as valida.
 
 ---
 
@@ -325,7 +327,7 @@ flowchart LR
 1. **Repositórios públicos** (este e os `lib-tec-*`): repositório público não pode usar workflows de um privado. Nada de segredo aqui.
 2. **Tag `v1`**: os componentes usam `@v1`, e os workflows daqui chamam as próprias actions também por `@v1` (o
    código que roda é sempre o da tag `v1`, não o da ref que o componente escolher: só `@v1` é suportado). A cada
-   mudança compatível, crie `v1.x.y` e mova `v1`; mudança incompatível → `v1`. Mover a tag muda, de uma vez, o código
+   mudança compatível, crie `v1.x.y` e mova `v1`; mudança incompatível pede uma tag nova (`v2`) e a troca das referências `@v1` dos próprios workflows daqui. Mover a tag muda, de uma vez, o código
    que roda com `packages: write`/`contents: write` em todos os componentes: proteja-a com um **ruleset de tags**
    (`v*`: bloquear update, delete e force push; bypass só para administradores).
    ```bash
@@ -351,6 +353,8 @@ flowchart LR
 flowchart LR
     W["tec-workflows<br/>tag v1"] --> C["1️⃣ TEC.Core"] --> V["2️⃣ TEC.Vault"] --> Q["3️⃣ TEC.Cqrs"] --> S["4️⃣ TEC.Security"] --> O["5️⃣ TEC.Observability"] --> R["6️⃣ TEC.ORM"] --> M["7️⃣ TEC.Messaging"]
 ```
+
+O `TEC.Http` depende só do `TEC.Core` e o `TEC.OpenApi` não depende de nenhum outro `TEC.*`: os dois podem sair a qualquer momento (o `TEC.Http` depois do Core).
 
 Para cada componente, depois que as dependências dele estiverem no feed:
 

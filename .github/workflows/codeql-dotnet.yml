@@ -52,7 +52,6 @@ jobs:
         if: inputs.build-mode == 'manual'
         uses: tudoemcodigo/tec-workflows/actions/setup-dotnet@v1
         with:
-          runtimes: ""
           private-feed: ${{ inputs.private-feed }}
           nuget-token: ${{ github.token }}
           restore: ${{ inputs.solution }}

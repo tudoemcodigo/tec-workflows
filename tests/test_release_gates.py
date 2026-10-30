@@ -26,6 +26,7 @@ class TestReleaseGates(unittest.TestCase):
             "started_at": "2026-10-24T12:00:00Z",
             "status": status,
             "conclusion": conclusion,
+            "app": {"slug": "github-actions"},
         }
 
     def test_open_pull_request_blocks_release(self) -> None:
@@ -44,6 +45,33 @@ class TestReleaseGates(unittest.TestCase):
 
     def test_successful_latest_ci_ok_allows_release(self) -> None:
         self.assertIsNone(release_gates.validate_release_gates([], [self.check()]))
+
+    def test_ci_ok_from_another_app_blocks_release(self) -> None:
+        impostor = {**self.check(), "app": {"slug": "app-de-terceiro"}}
+        error = release_gates.validate_release_gates([], [impostor])
+        self.assertIn("GitHub Actions", error or "")
+
+    def test_ci_ok_without_app_blocks_release(self) -> None:
+        no_app = self.check()
+        del no_app["app"]
+        self.assertIsNotNone(release_gates.validate_release_gates([], [no_app]))
+
+    def test_ci_ok_with_malformed_app_blocks_release(self) -> None:
+        for app in (None, "github-actions", {}, {"slug": None}, {"slug": "GitHub-Actions"}):
+            with self.subTest(app=app):
+                malformed = {**self.check(), "app": app}
+                self.assertIsNotNone(release_gates.validate_release_gates([], [malformed]))
+
+    def test_newer_ci_ok_from_another_app_does_not_override_actions_result(self) -> None:
+        # O resultado que vale é o do Actions: um check mais novo de outro app não aprova nem reprova
+        actions_failure = self.check(conclusion="failure")
+        impostor_success = {
+            **self.check(),
+            "id": 99,
+            "started_at": "2026-10-24T14:00:00Z",
+            "app": {"slug": "app-de-terceiro"},
+        }
+        self.assertIsNotNone(release_gates.validate_release_gates([], [actions_failure, impostor_success]))
 
     def test_explicit_override_allows_open_prs_but_still_requires_ci_ok(self) -> None:
         prs = [{"number": 17}]

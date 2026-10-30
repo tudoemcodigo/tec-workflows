@@ -9,7 +9,6 @@ name: CI (.NET)
 #   changes ──┬── conventions ───────────────────────────┐
 #             ├── build-pack ────────────────────────────┤
 #             ├── unit (net10.0 + cobertura) ─┐          │
-#             ├── unit (net8.0) ──────────────┤          │
 #             ├── unit (net10.0 sem ICU) ─────┼─ report ─┼── ci-ok ── publicar-previa (só push na main)
 #             ├── integration (containers) ───┘          │
 #             └── codeql ────────────────────────────────┘
@@ -32,7 +31,7 @@ on:
         type: string
         required: true
       unit-tests:
-        description: "Testes da matriz (net10.0, net8.0, sem ICU): uma linha por execução, '<projeto> [filtro]'"
+        description: "Testes da matriz (net10.0 e net10.0 sem ICU): uma linha por execução, '<projeto> [filtro]'"
         type: string
         required: true
       integration-tests:
@@ -168,7 +167,6 @@ jobs:
       - name: Setup .NET
         uses: tudoemcodigo/tec-workflows/actions/setup-dotnet@v1
         with:
-          runtimes: ""
           private-feed: ${{ inputs.private-feed }}
           nuget-token: ${{ github.token }}
           restore: ${{ inputs.solution }}
@@ -196,7 +194,7 @@ jobs:
           VERSION: ${{ steps.versao.outputs.version }}
         run: dotnet build "$SOLUTION" -c Release --no-restore "-p:Version=$VERSION"
 
-      # Package validation entre os TFMs; só os projetos IsPackable geram pacote (publicado só pelo publicar-previa)
+      # Package validation; só os projetos IsPackable geram pacote (publicado só pelo publicar-previa)
       - name: Pack
         env:
           SOLUTION: ${{ inputs.solution }}
@@ -242,10 +240,6 @@ jobs:
           - name: net10.0
             tfm: net10.0
             coverage: true
-            invariant: false
-          - name: net8.0
-            tfm: net8.0
-            coverage: false
             invariant: false
           - name: net10.0-sem-icu
             tfm: net10.0

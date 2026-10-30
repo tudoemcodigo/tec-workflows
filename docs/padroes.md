@@ -33,6 +33,9 @@ flowchart TB
     Obs["📡 TEC.Observability<br/><sub>traces, métricas, logs</sub>"]
     Orm["🗄️ TEC.ORM<br/><sub>persistência</sub>"]
     Msg["📮 TEC.Messaging<br/><sub>outbox, inbox, RabbitMQ</sub>"]
+    Http["🚦 TEC.Http<br/><sub>borda HTTP: proxy, HSTS, limite, CORS</sub>"]
+    OpenApi["📖 TEC.OpenApi<br/><sub>OpenAPI e Scalar</sub>"]
+    Http --> Core
     Vault --> Core
     Cqrs --> Core
     Sec --> Core
@@ -46,14 +49,13 @@ flowchart TB
 
 | Regra | Detalhe |
 |---|---|
-| Só de cima para baixo | `TEC.Core` não depende de ninguém; `TEC.Vault` só do Core; ORM pode usar Core, Cqrs e Vault; Messaging usa Core e Vault (o pacote `.SqlServer` usa o EF Core direto, sem o ORM) |
-| Cqrs, Security e Observability são independentes entre si | Integração cruzada só por **pacote-ponte opcional** (ex.: `TEC.Cqrs.Observability`), nunca por dependência direta |
+| Só de cima para baixo | `TEC.Core` não depende de ninguém; `TEC.Vault` só do Core; `TEC.Http` só do Core; `TEC.OpenApi` de nenhum `TEC.*`; ORM pode usar Core, Cqrs e Vault; Messaging usa Core e Vault (o pacote `.SqlServer` usa o EF Core direto, sem o ORM) |
+| Cqrs, Security e Observability são independentes entre si | Integração cruzada por **pacote-ponte opcional**, só quando a integração exigir código dos dois lados; hoje nenhum existe, porque os nomes `ActivitySource`/`Meter` `TEC.<Componente>` bastam (veja o [TEC.Observability](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/docs/integracoes-tec.md)). Nunca por dependência direta |
 | Observability não é dependência de ninguém | Os componentes emitem `ActivitySource`/`Meter` com nome `TEC.<Componente>` (BCL, sem pacote); o Observability apenas os assina |
 | Sem ciclos | Verificado pela ordem de publicação: Core → Vault → Cqrs → Security → Observability → ORM → Messaging |
 | Sem duplicidade | Antes de criar utilitário (guard, `Result`, comparação em tempo constante, mascaramento, JSON, hash, Base64Url, leitura limitada de arquivo, descrição de texto não confiável para log, uma execução por chave (`SingleFlight`), mensagens padrão de erro (`ApiResponse.DefaultMessages`)...), use o do `TEC.Core`. Se faltar algo genérico, ele entra no Core |
-| Polyfills | Ficam em `build/Polyfills/` (canônico), compilados como `internal` só nos pacotes. Ex.: use `private readonly Lock _sync = new();` **sem `#if`** — no net8.0 o polyfill cobre |
 | Pacotes separados por dependência pesada | `TEC.X` (abstrações, sem Azure/ASP.NET) + `TEC.X.AspNetCore`, `TEC.X.Azure`... O consumidor só carrega o que usa |
-| Mesma versão na família | Todos os pacotes `TEC.X.*` de um repositório saem juntos, com a mesma versão. Satélites podem usar internos do núcleo (`InternalsVisibleTo`); por isso a documentação exige a mesma versão em todos. Nesse caso o satélite remove o polyfill local (`<Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />`) para usar o do núcleo |
+| Mesma versão na família | Todos os pacotes `TEC.X.*` de um repositório saem juntos, com a mesma versão. Satélites podem usar internos do núcleo (`InternalsVisibleTo`); por isso a documentação exige a mesma versão em todos |
 
 ## 📁 Estrutura do repositório
 
@@ -87,7 +89,7 @@ TEC.X/
 | Tema | Regra |
 |---|---|
 | Versão | Uma só por repositório, em `Directory.Build.props` (`0.0.1` até a primeira publicação). Nunca `<Version>` no csproj |
-| Alvos | `net8.0;net10.0` (LTS). Gerador Roslyn: `netstandard2.0` |
+| Alvo | `net10.0` (LTS), em `TargetFrameworks` no `build/Tec.Build.props`. Um projeto pode redefinir (ex.: gerador Roslyn em `netstandard2.0`). O plural no props é proposital: com `TargetFramework` lá, o SDK ignoraria o `TargetFrameworks` de um csproj |
 | Pacotes de terceiros | Versão só no `Directory.Packages.props`; `CentralPackageTransitivePinningEnabled` ligado |
 | Componentes TEC.* | `<TecReference Include="TEC.Vault" />` no csproj, sem versão — vira PackageReference do feed `tec-interno` por padrão, na máquina e no CI (o desenvolvedor precisa de credencial de leitura do feed); ProjectReference para o repositório vizinho só sob demanda, com `-p:TecUseLocalProjects=true` (ignorado no CI). A versão consumida é a **publicada**, declarada no `Directory.Packages.props` (`<PackageVersion Include="TEC.Vault" Version="0.0.1" />`), atualizada pelo Dependabot |
 | Lock file | `packages.lock.json` versionado (modo pacote, o padrão), regenerado com `dotnet restore <solução> --force-evaluate`; restore `--locked-mode` no CI. O modo local usa `packages.local.lock.json`, fora do git |
@@ -96,19 +98,18 @@ TEC.X/
 | Metadados | Só `Description` e `PackageTags` no csproj; o resto vem de `build/Tec.Build.props` |
 | README do pacote | `README.md` na pasta do projeto (repositório com vários pacotes) ou o da raiz |
 
-### Dependências pareadas (atualizadas à mão)
+### Dependências atualizadas à mão
 
-O Dependabot ignora três famílias de pacotes e as majors de uma quarta (`.github/dependabot.yml`), porque não entende `Condition` no
-`Directory.Packages.props`: propõe a major errada e regenera o lock de um TFM só (`NU1004` no restore).
+O Dependabot (`.github/dependabot.yml`) ignora as majors dos pacotes que acompanham o .NET do alvo e todas as versões do
+Roslyn.
 
 | Pacotes | Por quê | Regra |
 |---|---|---|
-| `Microsoft.AspNetCore.*`, `Microsoft.EntityFrameworkCore*` | Uma versão por TFM: **8.x no `net8.0`, 10.x no `net10.0`** (LTS com LTS) | Patch mensal: suba as duas linhas (ex.: `8.0.31` → `8.0.32` e `10.0.12` → `10.0.13`). Major só junto com um TFM novo |
-| `Microsoft.Extensions.DependencyInjection*`, `Microsoft.Extensions.*.Abstractions` | Podem ter uma versão por TFM (ex.: TEC.Core: **8.0.x no `net8.0`, 10.0.x no `net10.0`**) | Minor/patch pelo Dependabot; **major ignorada** (uma 10.x no bloco do `net8.0` desfaria o pin): só à mão, junto com um TFM novo |
+| `Microsoft.AspNetCore.*`, `Microsoft.EntityFrameworkCore*`, `Microsoft.Extensions.DependencyInjection*`, `Microsoft.Extensions.*.Abstractions` | Acompanham o .NET do alvo: **10.x no `net10.0`** (LTS com LTS) | Minor/patch pelo Dependabot; **major ignorada**: só à mão, junto com um alvo novo |
 | `Microsoft.CodeAnalysis.*` | O gerador de código usa a versão do **SDK mínimo suportado** (ex.: Roslyn 4.12); os demais projetos podem usar outra | Sobe só quando o SDK mínimo subir |
 
-Para atualizar: troque a versão no `Directory.Packages.props`, rode `dotnet restore <solução> --force-evaluate` (regenera
-o lock dos dois TFMs) e abra o PR. Vulnerabilidade conhecida nesses pacotes continua quebrando o restore (`NuGetAudit`),
+Para atualizar à mão: troque a versão no `Directory.Packages.props`, rode `dotnet restore <solução> --force-evaluate`
+(regenera o lock) e abra o PR. Vulnerabilidade conhecida nesses pacotes continua quebrando o restore (`NuGetAudit`),
 então nenhuma correção de segurança passa despercebida.
 
 ## 💻 Código
@@ -150,7 +151,7 @@ então nenhuma correção de segurança passa despercebida.
 
 | Categoria (`[Category]`) | Onde roda | Conteúdo |
 |---|---|---|
-| *(sem categoria)* | PR, push na `main` e release, matriz `net10.0` / `net8.0` / sem ICU | Unitários, regressão, segurança rápida |
+| *(sem categoria)* | PR, push na `main` e release, matriz `net10.0` / `net10.0` sem ICU | Unitários, regressão, segurança rápida |
 | `Integracao` | PR e push na `main` (containers; Azure via OIDC só na main) | Dependências reais |
 | `Carga-CI` | `performance.yml` (manual, `suite` = `rapida` ou `todas`) | Concorrência e fumaça de carga (segundos) |
 | `Carga-Pesada`, `Seguranca-Pesada` | `performance.yml` (manual, `suite` = `pesadas` ou `todas`) | Soak, volume, canais laterais de tempo |
@@ -186,22 +187,24 @@ Tudo em **português**, visual (emojis nos títulos, tabelas, diagramas Mermaid,
 | 6 | 📥 Instalação | Feed do GitHub Packages (PAT `read:packages`) + `dotnet add package` |
 | 7 | 🚀 Início rápido | Menor código que funciona |
 | 8 | 📚 Documentação | Tabela com cada arquivo de `docs/` e o que ele responde |
-| 9 | ⚡ Compatibilidade | .NET 8/10, AOT, sem ICU, sistemas |
+| 9 | ⚡ Compatibilidade | .NET 10, AOT, sem ICU, sistemas |
 | 10 | 🛡️ Segurança · 🧪 Testes | Resumo + link para `docs/` |
 | 11 | 🤝 Contribuição · 🏷️ Versionamento · 📄 Licença | Curto |
 
 #### 🏷️ Badges canônicos obrigatórios no cabeçalho do README:
 
-Todo componente `lib-tec-*` e repositório central deve exibir no cabeçalho centralizado os badges contextuais correspondentes:
+Todo componente `lib-tec-*` e repositório central deve exibir no cabeçalho centralizado os badges contextuais correspondentes.
+O `README.md` da raiz vai dentro do pacote NuGet, onde links relativos quebram: use links absolutos
+(`https://github.com/tudoemcodigo/lib-tec-x/blob/main/...`).
 
 ```markdown
 [![CI](https://github.com/tudoemcodigo/lib-tec-x/actions/workflows/ci.yml/badge.svg)](https://github.com/tudoemcodigo/lib-tec-x/actions/workflows/ci.yml)
-[![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4?logo=dotnet&logoColor=white)](docs/compatibilidade.md)
-[![Native AOT](https://img.shields.io/badge/Native%20AOT-compat%C3%ADvel-512BD4)](docs/compatibilidade.md)
-[![Versão](https://img.shields.io/badge/vers%C3%A3o-0.0.1-blue)](CHANGELOG.md)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/compatibilidade.md)
+[![Native AOT](https://img.shields.io/badge/Native%20AOT-compat%C3%ADvel-512BD4)](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/compatibilidade.md)
+[![Versão](https://img.shields.io/badge/vers%C3%A3o-0.0.1-blue)](https://github.com/tudoemcodigo/lib-tec-x/blob/main/CHANGELOG.md)
 [![NuGet](https://img.shields.io/badge/nuget-GitHub%20Packages-0969da?logo=github)](https://github.com/orgs/tudoemcodigo/packages)
-[![SLSA](https://img.shields.io/badge/SLSA-Level%202+-0969da?logo=security)](README.md#-segurança)
-[![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](LICENSE)
+[![SLSA](https://img.shields.io/badge/SLSA-Level%202+-0969da?logo=security)](https://github.com/tudoemcodigo/lib-tec-x#%EF%B8%8F-seguran%C3%A7a--testes)
+[![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](https://github.com/tudoemcodigo/lib-tec-x/blob/main/LICENSE)
 ```
 
 #### 📄 Licenciamento e Cabeçalho Canônico de Atribuição
@@ -286,7 +289,7 @@ rules:
 | `unpinned-uses` | `tudoemcodigo/*` aceita tag de versão (`v1`); demais actions exigem SHA fixo (`hash-pin`) |
 | `use-trusted-publishing` | Desabilitado (`disable: true`) — GitHub Packages não suporta trusted publishing (OIDC); push usa `GITHUB_TOKEN` efêmero da execução |
 
-O arquivo é verificado pelo job `lint.yml` do tec-workflows (`zizmor .github/workflows`).
+O `lint.yml` do tec-workflows roda `zizmor --min-severity low .` na raiz do repositório.
 
 ---
 

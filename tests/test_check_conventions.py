@@ -123,7 +123,7 @@ exit "$rc"
         csproj.parent.mkdir(parents=True, exist_ok=True)
         csproj.write_text("""<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
     <TecReference Include="TEC.Core" />
@@ -134,7 +134,7 @@ exit "$rc"
         dpp = self.repo / "Directory.Packages.props"
         dpp.write_text("""<Project>
   <ItemGroup>
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection">8.0.0</PackageVersion>
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection">10.0.12</PackageVersion>
     <PackageVersion Include="TEC.Core">0.0.1</PackageVersion>
   </ItemGroup>
 </Project>
@@ -189,7 +189,7 @@ exit "$rc"
         csproj = self.repo / "TEC.Test" / "TEC.Test.csproj"
         csproj.write_text("""<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
@@ -205,7 +205,7 @@ exit "$rc"
         csproj = self.repo / "TEC.Test" / "TEC.Test.csproj"
         csproj.write_text("""<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="TEC.Core" Version="0.0.1" />
@@ -221,7 +221,7 @@ exit "$rc"
         csproj = self.repo / "TEC.Test" / "TEC.Test.csproj"
         csproj.write_text("""<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
     <Version>1.0.0</Version>
   </PropertyGroup>
   <ItemGroup>
@@ -233,14 +233,12 @@ exit "$rc"
         self.assertEqual(rc, 1)
         self.assertIn("Versão no csproj", out)
 
-    def test_central_package_management_accepts_tfm_specific_versions(self) -> None:
+    def test_central_package_management_versions_are_accepted(self) -> None:
+        # Version no Directory.Packages.props é o lugar certo: a regra de PackageReference com Version vale só no csproj
         self.create_minimal_repo()
         dpp = self.repo / "Directory.Packages.props"
         dpp.write_text("""<Project>
-  <ItemGroup Condition=\"'$(TargetFramework)' == 'net8.0'\">
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
-  </ItemGroup>
-  <ItemGroup Condition=\"'$(TargetFramework)' == 'net10.0'\">
+  <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
   </ItemGroup>
 </Project>

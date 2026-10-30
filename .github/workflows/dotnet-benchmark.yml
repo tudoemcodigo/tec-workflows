@@ -1,6 +1,6 @@
 name: Benchmarks (.NET)
 
-# BenchmarkDotNet comparando net8.0 x net10.0. Chamado pelo performance.yml de cada componente (só sob demanda).
+# BenchmarkDotNet no net10.0. Chamado pelo performance.yml de cada componente (só sob demanda).
 # Os relatórios em Markdown vão para o resumo da execução; os completos, para o artefato "benchmarks".
 # Medições em runner compartilhado variam entre execuções: use para comparar tendências, não números absolutos.
 #
@@ -61,7 +61,6 @@ jobs:
       - name: Setup .NET
         uses: tudoemcodigo/tec-workflows/actions/setup-dotnet@v1
         with:
-          runtimes: "8.0.x"
           private-feed: ${{ inputs.private-feed }}
           nuget-token: ${{ github.token }}
           restore: ${{ inputs.project }}
@@ -82,7 +81,7 @@ jobs:
             CRED=(env "NuGetPackageSourceCredentials_tec-interno=Username=$GITHUB_ACTOR;Password=$NUGET_TOKEN")
           fi
           "${CRED[@]}" dotnet run -c Release --no-restore --project "$PROJECT" -f net10.0 -- \
-            --filter "$FILTER" --runtimes net8.0 net10.0 --exporters github --artifacts ./benchmarks
+            --filter "$FILTER" --exporters github --artifacts ./benchmarks
 
       - name: Resumo
         if: ${{ !cancelled() && hashFiles('benchmarks/results/*-report-github.md') != '' }}

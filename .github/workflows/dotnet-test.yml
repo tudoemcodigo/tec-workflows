@@ -139,7 +139,6 @@ jobs:
       - name: Setup .NET
         uses: tudoemcodigo/tec-workflows/actions/setup-dotnet@v1
         with:
-          runtimes: ${{ inputs.tfm == 'net8.0' && '8.0.x' || '' }}
           private-feed: ${{ inputs.private-feed }}
           nuget-token: ${{ github.token }}
           env: ${{ inputs.env }}

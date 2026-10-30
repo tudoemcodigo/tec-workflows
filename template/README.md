@@ -2,19 +2,19 @@
 
 <img src="https://www.tudoemcodigo.com/marca/PNG/tudoemcodigo-icone-512.png" alt="Tudo em Código" width="120" />
 
-[🏠 Tudo em Código](https://github.com/tudoemcodigo) › [📦 TEC.X](https://github.com/tudoemcodigo/TEC.X)
+[🏠 Tudo em Código](https://github.com/tudoemcodigo) › [📦 TEC.X](https://github.com/tudoemcodigo/lib-tec-x)
 
 # TEC.X
 
 > Breve descrição do valor do componente: o problema que resolve e para quem.
 
-[![CI](https://github.com/tudoemcodigo/TEC.X/actions/workflows/ci.yml/badge.svg)](https://github.com/tudoemcodigo/TEC.X/actions/workflows/ci.yml)
-[![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4?logo=dotnet&logoColor=white)](docs/compatibilidade.md)
-[![Native AOT](https://img.shields.io/badge/Native%20AOT-compat%C3%ADvel-512BD4)](docs/compatibilidade.md)
-[![Versão](https://img.shields.io/badge/vers%C3%A3o-0.0.1-blue)](CHANGELOG.md)
+[![CI](https://github.com/tudoemcodigo/lib-tec-x/actions/workflows/ci.yml/badge.svg)](https://github.com/tudoemcodigo/lib-tec-x/actions/workflows/ci.yml)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/compatibilidade.md)
+[![Native AOT](https://img.shields.io/badge/Native%20AOT-compat%C3%ADvel-512BD4)](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/compatibilidade.md)
+[![Versão](https://img.shields.io/badge/vers%C3%A3o-0.0.1-blue)](https://github.com/tudoemcodigo/lib-tec-x/blob/main/CHANGELOG.md)
 [![NuGet](https://img.shields.io/badge/nuget-GitHub%20Packages-0969da?logo=github)](https://github.com/orgs/tudoemcodigo/packages)
-[![SLSA](https://img.shields.io/badge/SLSA-Level%202+-0969da?logo=security)](README.md#-seguran%C3%A7a)
-[![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](LICENSE)
+[![SLSA](https://img.shields.io/badge/SLSA-Level%202+-0969da?logo=security)](#%EF%B8%8F-seguran%C3%A7a--testes)
+[![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](https://github.com/tudoemcodigo/lib-tec-x/blob/main/LICENSE)
 
 </div>
 
@@ -116,17 +116,17 @@ var result = await service.DoSomethingAsync("input");
 
 | Arquivo | O que responde |
 |---|---|
-| [📐 Uso](docs/uso.md) | Exemplos completos de API |
-| [⚙️ Opções](docs/opcoes.md) | Tabela: opção, padrão, descrição |
-| [❌ Erros](docs/erros.md) | Código/exceção, quando ocorre, o que fazer |
-| [🛡️ Segurança](docs/seguranca.md) | Armadilhas e boas práticas |
-| [⚡ Compatibilidade](docs/compatibilidade.md) | .NET 8/10, AOT, sem ICU, sistemas |
+| [📐 Uso](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/uso.md) | Exemplos completos de API |
+| [⚙️ Opções](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/opcoes.md) | Tabela: opção, padrão, descrição |
+| [❌ Erros](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/erros.md) | Código/exceção, quando ocorre, o que fazer |
+| [🛡️ Segurança](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/seguranca.md) | Armadilhas e boas práticas |
+| [⚡ Compatibilidade](https://github.com/tudoemcodigo/lib-tec-x/blob/main/docs/compatibilidade.md) | .NET 10, AOT, sem ICU, sistemas |
 
 ---
 
 ## ⚡ Compatibilidade
 
-- **Frameworks**: `net8.0`, `net10.0` (LTS)
+- **Framework**: `net10.0` (LTS)
 - **Native AOT**: Compatível (exceto onde documentado)
 - **Globalization**: Modo *invariant* suportado (sem ICU)
 - **Sistemas**: Linux, Windows, macOS (x64, arm64)
@@ -145,7 +145,7 @@ var result = await service.DoSomethingAsync("input");
 
 - **Contribuição**: PRs bem-vindos; rode `scripts/validate-conventions.sh` antes de commitar
 - **Versionamento**: [SemVer 2.0](https://semver.org/lang/pt-BR/) — prévias `preview.N` no CI, releases manuais via `release.yml` (exige aprovação no environment `publicacao`)
-- **Licença**: [Apache 2.0](LICENSE) — consulte `NOTICE` para informações de atribuição do projeto
+- **Licença**: [Apache 2.0](https://github.com/tudoemcodigo/lib-tec-x/blob/main/LICENSE) — consulte `NOTICE` para informações de atribuição do projeto
 
 ---
 
