@@ -363,7 +363,7 @@ Para cada componente, depois que as dependências dele estiverem no feed:
 3. **Actions → Publicar versão → `0.0.1`** (ou `0.0.1-rc.1`).
 4. *Package settings* → visibilidade **pública** e acesso dos repositórios da organização.
 5. Para gerar novas prévias, suba a `<Version>` do `Directory.Build.props` para a próxima (ex.: `0.0.2`): com a tag
-   `v0.0.1` existente, o CI da `main` continua validando tudo, mas não publica prévia até esse ajuste.
+   `v0.0.1` criada no passo 3, o CI da `main` continua validando tudo, mas não publica prévia até esse ajuste.
 
 ---
 
